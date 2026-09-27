@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>日麻计分</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- ============ 页面1：模式选择 ============ -->
+    <div class="page" id="page-mode">
+      <h2 class="page-title">日本麻将计分</h2>
+      <!-- 存在进行中对局时显示：一键返回对局 -->
+      <button class="btn primary" id="btn-continue-game" style="display:none;margin-bottom:14px;width:100%">
+        ▶ 继续进行中的对局
+      </button>
+      <div class="card">
+        <h3>选择对局模式</h3>
+        <div class="mode-grid">
+          <div class="mode-card" id="mode-3">
+            <div class="big">三人</div>
+            <div class="sub">初始 35000 点</div>
+          </div>
+          <div class="mode-card selected" id="mode-4">
+            <div class="big">四人</div>
+            <div class="sub">初始 25000 点</div>
+          </div>
+        </div>
+      </div>
+      <button class="btn primary" id="btn-next-setup">下一步：开局设置</button>
+      <button class="btn" id="btn-goto-history" style="margin-top:10px">查看对局记录</button>
+
+      <!-- 联网对局卡片 -->
+      <div class="card" id="net-card" style="margin-top:16px">
+        <h3>联网对局</h3>
+        <div class="net-status" id="net-status">未连接服务器</div>
+        <div class="net-room" id="net-room" style="display:none">
+          <div class="net-room-code">其他玩家访问：<b id="net-room-code-val">—</b></div>
+          <div class="net-room-qr" id="net-room-qr" style="display:none">
+            <div class="qr-title">扫一扫加入本桌</div>
+            <div class="qr-canvas" id="qr-canvas"></div>
+            <div class="qr-url" id="qr-url">—</div>
+          </div>
+          <div class="net-room-meta" id="net-room-meta"></div>
+        </div>
+        <div class="net-actions" id="net-actions" style="display:none">
+          <div class="net-join" style="margin-top:10px">
+            <input type="text" id="net-name" maxlength="8"
+                   placeholder="你的名字" style="width:110px;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:15px;margin-right:6px">
+            <button class="btn" id="btn-set-name">设置名字</button>
+          </div>
+        </div>
+
+        <!-- 加入他人对局：输入房主手机显示的 IP，以成员身份进入对方房间 -->
+        <div class="net-joinroom" id="net-joinroom">
+          <div class="net-joinroom-label">加入他人对局</div>
+          <div class="net-joinroom-row">
+            <input type="text" id="join-ip" maxlength="64" inputmode="url" autocomplete="off"
+                   autocapitalize="off" spellcheck="false" placeholder="房主 IP" aria-label="房主 IP">
+            <button class="btn" id="btn-join-room">加入</button>
+            <button class="btn btn-scan" id="btn-scan-qr" title="扫描房主手机上的二维码加入">
+              <svg class="scan-ico" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"
+                   fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/>
+                <path d="M3 12h18"/>
+              </svg>
+              <span>扫码</span>
+            </button>
+          </div>
+          <div class="net-joinroom-tip" id="join-tip">在房主手机上查看 IP 后输入即可加入（需在同一 Wi-Fi/局域网），或点「扫码」扫房主的二维码</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 页面2：开局设置 ============ -->
+    <div class="page" id="page-setup">
+      <div class="topbar">
+        <span class="back" id="btn-back-setup" onclick="showMode()">‹ 返回</span>
+        <span class="status" id="setup-mode-label"></span>
+      </div>
+      <h2 class="page-title">开局设置</h2>
+
+      <div class="card">
+        <h3>起庄玩家</h3>
+        <div class="field">
+          <select id="setup-dealer"></select>
+        </div>
+        <div class="switch-row">
+          <span class="lbl" id="setup-west-hint">西入规则（开启后南四最低不足阈值自动进入西场）</span>
+          <div class="switch" id="switch-west"></div>
+        </div>
+        <div class="switch-row">
+          <span class="lbl">允许一炮多响</span>
+          <div class="switch" id="switch-multiron"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>实际方位与用户名</h3>
+        <div id="setup-seats"></div>
+      </div>
+
+      <button class="btn primary" id="btn-create-game">建立对局</button>
+    </div>
+
+    <!-- ============ 页面3：对局主界面 ============ -->
+    <div class="page" id="page-main">
+      <div class="topbar">
+        <span class="back" id="btn-back-main">‹ 返回</span>
+        <span class="status" id="center-mode"></span>
+        <span class="back" id="btn-new-game">新对局</span>
+      </div>
+
+      <div id="end-banner" class="end-banner" style="display:none"></div>
+      <div id="total-check-banner" class="notice warn" style="display:none"></div>
+
+      <!-- 对局桌面 -->
+      <div class="table">
+        <div id="table-seats"></div>
+        <div class="center-info">
+          <div class="round" id="center-round">东一局</div>
+          <div class="sub" id="center-honba">本场 0</div>
+          <div class="kyotaku" id="center-kyotaku">供托 0 点</div>
+        </div>
+        <!-- 骰子按钮：右下角 -->
+        <button class="dice-btn" id="btn-dice" title="摇骰子">⚄</button>
+        <!-- 番符表计算器按钮：左下角（与骰子对称） -->
+        <button class="dice-btn calc-btn" id="btn-calc" title="番符点数计算表">算</button>
+        <!-- 视角切换按钮：左上角（与右下角骰子对角）——选择"我是谁"，使自己的座位固定到桌面下方 -->
+        <button class="dice-btn view-btn" id="btn-view" title="选择你的视角（锁定自己到下方）">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12a9 9 0 1 1-2.64-6.36"/>
+            <polyline points="21 3 21 9 15 9"/>
+            <path d="M3 12a9 9 0 1 1 2.64 6.36"/>
+            <polyline points="3 21 3 15 9 15"/>
+          </svg>
+        </button>
+        <!-- 规则查询按钮：右上角（与左上角视角对角）——查询番数-役种 / 符数计算规则，只读不占操作权 -->
+        <button class="dice-btn help-btn" id="btn-help" title="番数查询 / 符数查询"><span class="help-q">？</span></button>
+      </div>
+
+      <!-- 本局操作 -->
+      <div class="actions">
+        <h3>本局操作</h3>
+        <div class="action-grid">
+          <button class="btn" id="btn-tsumo-ron">和牌结算</button>
+          <button class="btn" id="btn-riichi">立直</button>
+          <button class="btn" id="btn-flow">流局</button>
+          <button class="btn" id="btn-adjust">手动修正</button>
+          <button class="btn" id="btn-undo">撤回上一局</button>
+          <button class="btn" id="btn-end">结束对局</button>
+        </div>
+        <div class="hint">房主可操作：流局 · 手动修正 · 撤回 · 结束对局</div>
+      </div>
+
+      <!-- 本半庄已结算各局的分数记录（可折叠，默认展开） -->
+      <div class="actions round-log-card" id="round-log">
+        <div class="round-log-head" id="round-log-head" role="button" tabindex="0">
+          <span class="round-log-title">半庄分数记录</span>
+          <span class="round-log-count" id="round-log-count"></span>
+          <span class="round-log-arrow" id="round-log-arrow">▾</span>
+        </div>
+        <div class="round-log-body" id="round-log-body"></div>
+      </div>
+    </div>
+
+    <!-- ============ 页面4：历史记录 ============ -->
+    <div class="page" id="page-history">
+      <div class="topbar">
+        <span class="status">已完成对局</span>
+      </div>
+      <h2 class="page-title">对局历史</h2>
+      <div id="history-list"></div>
+      <button class="btn primary" id="btn-new-game-history" style="margin-top:12px">开新对局</button>
+    </div>
+
+    <!-- ============ 模态：立直选人 ============ -->
+    <div class="modal-overlay" id="modal-riichi">
+      <div class="modal">
+        <span class="close-x">×</span>
+        <h3>选择要立直的玩家</h3>
+        <div id="riichi-pick" class="player-pick"></div>
+      </div>
+    </div>
+
+    <!-- ============ 模态：骰子 ============ -->
+    <div class="modal-overlay" id="modal-dice">
+      <div class="modal modal-dice">
+        <span class="close-x">×</span>
+        <h3>摇骰子</h3>
+        <div class="dice-row" id="dice-row">
+          <div class="die" data-val="1"></div>
+          <div class="die" data-val="1"></div>
+        </div>
+        <div class="dice-actions">
+          <button class="btn" id="btn-dice-close">关闭</button>
+          <button class="btn primary" id="btn-dice-shake">摇一摇</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 模态：番符点数计算表 ============ -->
+    <div class="modal-overlay" id="modal-calc">
+      <div class="modal modal-calc">
+        <span class="close-x">×</span>
+        <h3>番符点数表</h3>
+        <!-- 由「和牌结算-填写分数」唤起时显示：说明座位已按和牌者锁定、关闭即回填 -->
+        <div class="notice ok" id="calc-link-hint" style="display:none"></div>
+        <div class="calc-inputs">
+          <label>番数
+            <select id="calc-han">
+              <option value="1">1 番</option>
+              <option value="2">2 番</option>
+              <option value="3" selected>3 番</option>
+              <option value="4">4 番</option>
+              <option value="5">5 番</option>
+              <option value="6">6 番</option>
+              <option value="7">7 番</option>
+              <option value="8">8 番</option>
+              <option value="9">9 番</option>
+              <option value="10">10 番</option>
+              <option value="11">11 番</option>
+              <option value="12">12 番</option>
+              <option value="13">13 番</option>
+              <option value="14">14 番以上</option>
+            </select>
+          </label>
+          <label>符数
+            <select id="calc-fu">
+              <option value="20">20 符</option>
+              <option value="25">25 符</option>
+              <option value="30" selected>30 符</option>
+              <option value="40">40 符</option>
+              <option value="50">50 符</option>
+              <option value="60">60 符</option>
+              <option value="70">70 符</option>
+              <option value="80">80 符</option>
+              <option value="90">90 符</option>
+              <option value="100">100 符</option>
+              <option value="110">110 符</option>
+            </select>
+          </label>
+          <div class="calc-seat">
+            <span>荣和 / 自摸者：</span>
+            <button class="seat-chip active" id="calc-seat-ko" data-seat="ko">子家（闲）</button>
+            <button class="seat-chip" id="calc-seat-oya" data-seat="oya">亲家（庄）</button>
+          </div>
+        </div>
+        <div class="calc-result" id="calc-result">
+          <div class="calc-row">
+            <span class="cr-label">荣和（放铳者付）</span>
+            <span class="cr-val" id="calc-ron">—</span>
+          </div>
+          <div class="calc-row">
+            <span class="cr-label">自摸</span>
+            <span class="cr-val" id="calc-tsumo">—</span>
+          </div>
+          <div class="calc-note" id="calc-note"></div>
+        </div>
+        <div class="hint">不计本场加算 · 5 番以上按满贯以上档位 · 自摸总额按当前局人数计（三人缺北少收一份）</div>
+        <button class="btn primary" id="btn-calc-close">关闭</button>
+      </div>
+    </div>
+
+    <!-- ============ 模态：规则查询（番数-役种 / 符数计算规则），页签切换，只读不占操作权 ============ -->
+    <div class="modal-overlay" id="modal-help">
+      <div class="modal modal-help">
+        <span class="close-x">×</span>
+        <h3>日麻规则速查</h3>
+        <div class="help-tabs">
+          <button class="help-tab active" id="help-tab-han" data-tab="han">番数查询</button>
+          <button class="help-tab" id="help-tab-fu" data-tab="fu">符数查询</button>
+        </div>
+
+        <!-- 番数-役种 页签 -->
+        <div class="help-pane" id="help-pane-han">
+          <div class="help-scroll">
+            <h4>一番</h4>
+            <div class="yaku-row"><span class="yk">立直</span><span class="note">门清 · 宣言时押 1000 点棒</span></div>
+            <div class="yaku-row"><span class="yk">一发</span><span class="note">门清 · 立直后一巡内和牌</span></div>
+            <div class="yaku-row"><span class="yk">门清自摸和</span><span class="note">门清 · 自摸和牌</span></div>
+            <div class="yaku-row"><span class="yk">平和</span><span class="note">门清 · 全顺子+两面听，无附加符</span></div>
+            <div class="yaku-row"><span class="yk">一杯口</span><span class="note">门清 · 同花色两副相同顺子</span></div>
+            <div class="yaku-row"><span class="yk">断幺九</span><span class="note">不含幺九牌（副露可）</span></div>
+            <div class="yaku-row"><span class="yk">役牌</span><span class="note">三元 / 自风 / 场风刻子，各 1 番可叠加</span></div>
+            <div class="yaku-row"><span class="yk">岭上开花</span><span class="note">杠后摸岭上牌自摸</span></div>
+            <div class="yaku-row"><span class="yk">抢杠</span><span class="note">和他人加杠的牌</span></div>
+            <div class="yaku-row"><span class="yk">海底捞月 / 河底捞鱼</span><span class="note">摸/和最后一张牌</span></div>
+
+            <h4>二番</h4>
+            <div class="yaku-row"><span class="yk">七对子</span><span class="note">门清 · 符数固定 25</span></div>
+            <div class="yaku-row"><span class="yk">对对和</span><span class="note">全刻子/杠子（含幺九）</span></div>
+            <div class="yaku-row"><span class="yk">三暗刻 / 三杠子</span><span class="note">三组暗刻 / 三组杠子</span></div>
+            <div class="yaku-row"><span class="yk">三色同刻</span><span class="note">三门同数刻子</span></div>
+            <div class="yaku-row"><span class="yk">小三元</span><span class="note">三元刻子 2 + 三元雀头 1</span></div>
+            <div class="yaku-row"><span class="yk">混老头</span><span class="note">幺九牌刻子/对子（需带字牌）</span></div>
+            <div class="yaku-row"><span class="yk">双立直</span><span class="note">门清 · 第一巡即立直</span></div>
+            <div class="yaku-row"><span class="yk">三色同顺</span><span class="note">门清 2 番 · 副露 1 番</span></div>
+            <div class="yaku-row"><span class="yk">一气通贯</span><span class="note">门清 2 番 · 副露 1 番 · 123/456/789 同花色</span></div>
+            <div class="yaku-row"><span class="yk">混全带幺九</span><span class="note">门清 2 番 · 副露 1 番</span></div>
+
+            <h4>三番</h4>
+            <div class="yaku-row"><span class="yk">混一色</span><span class="note">门清 3 番 · 副露 2 番</span></div>
+            <div class="yaku-row"><span class="yk">纯全带幺九</span><span class="note">门清 3 番 · 副露 2 番</span></div>
+            <div class="yaku-row"><span class="yk">二杯口</span><span class="note">门清 · 两组一杯口</span></div>
+
+            <h4>六番</h4>
+            <div class="yaku-row"><span class="yk">清一色</span><span class="note">门清 6 番 · 副露 5 番</span></div>
+
+            <h4>役满（固定档，可复合）</h4>
+            <div class="yaku-row"><span class="yk">国士无双 / 大三元 / 四暗刻 / 四杠子</span><span class="note">役满</span></div>
+            <div class="yaku-row"><span class="yk">大四喜 / 字一色 / 绿一色 / 清老头</span><span class="note">役满</span></div>
+            <div class="yaku-row"><span class="yk">九莲宝灯 / 天和 / 地和</span><span class="note">役满</span></div>
+
+            <div class="hint help-foot">宝牌（表/里/赤）非役，不计起和番，和牌后加番。</div>
+          </div>
+        </div>
+
+        <!-- 符数计算规则 页签 -->
+        <div class="help-pane" id="help-pane-fu" style="display:none">
+          <div class="help-scroll">
+            <h4>符数 = 底符 + 面符 + 雀头 + 听牌形 + 和牌方式</h4>
+
+            <div class="fu-sec">
+              <div class="fu-sec-t"><b>基本符</b></div>
+              <div class="yaku-row"><span class="yk">基本符</span><span class="note">20 符</span></div>
+            </div>
+
+            <div class="fu-sec">
+              <div class="fu-sec-t"><b>和牌方式（加项）</b></div>
+              <div class="yaku-row"><span class="yk">门清荣和</span><span class="note">+10 符</span></div>
+              <div class="yaku-row"><span class="yk">自摸和牌</span><span class="note">+2 符</span></div>
+              <div class="yaku-row"><span class="yk">门清自摸+平和</span><span class="note">一律 20 符，凑 2 番（自摸 2 符舍弃）</span></div>
+            </div>
+
+            <div class="fu-sec">
+              <div class="fu-sec-t"><b>刻子 / 杠子面符（中张 / 幺九）</b></div>
+              <div class="fu-tbl">
+                <div class="fu-cell"><span>明刻</span><b>2 / 4</b></div>
+                <div class="fu-cell"><span>暗刻</span><b>4 / 8</b></div>
+                <div class="fu-cell"><span>明杠</span><b>8 / 16</b></div>
+                <div class="fu-cell"><span>暗杠</span><b>16 / 32</b></div>
+              </div>
+              <div class="hint help-foot">顺子 0 符；中张=数牌 2~8，幺九=数牌 1/9 及全部字牌。</div>
+            </div>
+
+            <div class="fu-sec">
+              <div class="fu-sec-t"><b>雀头（对子）</b></div>
+              <div class="yaku-row"><span class="yk">数牌 / 客风对子</span><span class="note">0 符</span></div>
+              <div class="yaku-row"><span class="yk">三元 / 自风 / 场风对子</span><span class="note">+2 符（连风对 +4 符）</span></div>
+            </div>
+
+            <div class="fu-sec">
+              <div class="fu-sec-t"><b>听牌形（只加一种，取最高）</b></div>
+              <div class="yaku-row"><span class="yk">两面 / 双碰</span><span class="note">0 符（不加符）</span></div>
+              <div class="yaku-row"><span class="yk">坎张 / 边张</span><span class="note">+2 符</span></div>
+              <div class="yaku-row"><span class="yk">单骑（雀头）</span><span class="note">+2 符</span></div>
+            </div>
+
+            <div class="fu-sec">
+              <div class="fu-sec-t"><b>特例（覆盖上述加项）</b></div>
+              <div class="yaku-row"><span class="yk">含平和的门清自摸</span><span class="note">一律 20 符，凑 2 番（自摸 2 符舍弃）</span></div>
+              <div class="yaku-row"><span class="yk">七对子</span><span class="note">一律 25 符</span></div>
+              <div class="yaku-row"><span class="yk">鸣牌（副露）</span><span class="note">至少 30 符（未鸣牌者不受此限）</span></div>
+            </div>
+
+            <div class="hint help-foot">符数总和不满 10 者一律向上取整到 10（切上）。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 模态：视角切换（选择自己对应的玩家，仅本机生效） ============ -->
+    <div class="modal-overlay" id="modal-view">
+      <div class="modal modal-view">
+        <span class="close-x">×</span>
+        <h3>选择你的座位</h3>
+        <p class="view-desc">选择哪一个用户名对应你自己。锁定后，你的名字会固定显示在桌面下方，方便以自己为视角看牌局。</p>
+        <div id="view-pick" class="player-pick"></div>
+        <div class="view-current" id="view-current"></div>
+        <div class="view-actions">
+          <button class="btn danger" id="btn-view-unlock" style="display:none">解除锁定</button>
+          <button class="btn primary" id="btn-view-lock">锁定</button>
+        </div>
+        <div class="hint">仅对当前设备生效，不同步给其他玩家 · 本半庄内持续有效</div>
+      </div>
+    </div>
+
+    <!-- ============ 模态：和牌结算-选择和牌类型 ============ -->
+    <div class="modal-overlay" id="modal-settle-type">
+      <div class="modal">
+        <span class="close-x">×</span>
+        <h3>本局和牌类型</h3>
+        <div class="notice ok" id="settle-type-honba">当前本场 0</div>
+        <button class="btn" id="btn-settle-ron">荣和（点炮，一人放铳）</button>
+        <button class="btn primary" id="btn-settle-tsumo">自摸（自摸者向各家收分）</button>
+      </div>
+    </div>
+
+    <!-- ============ 模态：和牌结算-选择付分人 ============ -->
+    <div class="modal-overlay" id="modal-settle-pay">
+      <div class="modal">
+        <span class="close-x">×</span>
+        <h3>本局谁在付分？（放铳 / 自摸应付）</h3>
+        <div id="pay-pick" class="player-pick"></div>
+      </div>
+    </div>
+
+    <!-- ============ 模态：和牌结算-选择收分对象 ============ -->
+    <div class="modal-overlay" id="modal-settle-recv">
+      <div class="modal">
+        <span class="close-x">×</span>
+        <h3 id="recv-hint">本局给谁付分？</h3>
+        <div id="recv-pick" class="player-pick"></div>
+      </div>
+    </div>
+
+    <!-- ============ 模态：和牌结算-填写分数 ============ -->
+    <div class="modal-overlay" id="modal-settle-amount">
+      <div class="modal">
+        <span class="close-x">×</span>
+        <h3>填写应付分数</h3>
+        <div class="notice ok" id="settle-recv-name">收分对象</div>
+        <div class="hint" id="settle-amount-honba" style="display:none"></div>
+        <div class="field">
+          <input type="number" class="num-input" id="settle-amount" placeholder="输入分数" min="0">
+        </div>
+        <button class="btn ghost" id="btn-settle-calc">点数计算（番符表）</button>
+        <button class="btn primary" id="btn-settle-confirm">确认本笔</button>
+        <div class="hint">点数计算按本笔和牌者的亲/子身份锁定座位，关闭番符表后结果自动填入上方输入框</div>
+      </div>
+    </div>
+
+    <!-- ============ 模态：是否还有结算 ============ -->
+    <div class="modal-overlay" id="modal-settle-more">
+      <div class="modal">
+        <h3>本局是否还有其它和牌者？</h3>
+        <div class="notice ok" id="settle-queue-count">本局已有 0 位和牌者收分</div>
+        <button class="btn" id="btn-settle-more-yes">还有（继续录入）</button>
+        <button class="btn primary" id="btn-settle-more-done">没有，完成本局</button>
+      </div>
+    </div>
+
+    <!-- ============ 模态：自摸-选自摸者 ============ -->
+    <div class="modal-overlay" id="modal-tsumo">
+      <div class="modal">
+        <span class="close-x">×</span>
+        <h3>选择自摸者（和牌者）</h3>
+        <div id="tsumo-pick" class="player-pick"></div>
+      </div>
+    </div>
+
+    <!-- ============ 模态：自摸-输入应付额（庄家1个/闲家子+亲2个，程序自动复制到各家） ============ -->
+    <div class="modal-overlay" id="modal-tsumo-amounts">
+      <div class="modal">
+        <span class="close-x">×</span>
+        <h3>自摸结算 — 输入应付额</h3>
+        <div class="notice ok" id="tsumo-recv-name">自摸者</div>
+        <div id="tsumo-amount-list"></div>
+        <button class="btn ghost" id="btn-tsumo-calc">点数计算（番符表）</button>
+        <div class="hint">按本笔自摸者的亲/子身份锁定座位；关闭番符表后，按「闲家应付 / 庄家应付」分类自动填入上方输入框</div>
+        <div class="hint" id="tsumo-honba-hint">本场加算将自动计入</div>
+        <button class="btn primary" id="btn-tsumo-confirm">下一步：核对明细</button>
+      </div>
+    </div>
+
+    <!-- ============ 模态：自摸-明细核对（确认前展示各家应付） ============ -->
+    <div class="modal-overlay" id="modal-tsumo-review">
+      <div class="modal">
+        <span class="close-x">×</span>
+        <h3>自摸结算 — 核对明细</h3>
+        <div class="notice ok" id="tsumo-review-title">自摸者：</div>
+        <div id="tsumo-review-list"></div>
+        <div class="notice ok" id="tsumo-review-total"></div>
+        <button class="btn" id="btn-tsumo-review-back">返回修改</button>
+        <button class="btn primary" id="btn-tsumo-review-confirm">确认入账</button>
+      </div>
+    </div>
+
+    <!-- ============ 模态：结算结果 ============ -->
+    <div class="modal-overlay" id="modal-result">
+      <div class="modal">
+        <h3>本局结算结果</h3>
+        <div class="notice warn" id="result-warning" style="display:none"></div>
+        <div class="notice ok" id="result-honba" style="display:none"></div>
+        <div class="notice ok" id="result-kyotaku" style="display:none"></div>
+        <div id="result-players"></div>
+        <button class="btn primary" id="btn-result-close">确定</button>
+      </div>
+    </div>
+
+    <!-- ============ 模态：流局类型 ============ -->
+    <div class="modal-overlay" id="modal-flow">
+      <div class="modal">
+        <span class="close-x">×</span>
+        <h3>流局类型</h3>
+        <button class="btn" id="flow-koei">荒牌流局（有人听牌）</button>
+        <button class="btn" id="flow-other">其他流局（无分，直接下一局）</button>
+      </div>
+    </div>
+
+    <!-- ============ 模态：荒牌流局-选听牌者 ============ -->
+    <div class="modal-overlay" id="modal-flow-koei">
+      <div class="modal">
+        <span class="close-x">×</span>
+        <h3 id="tanyou-hint">勾选听牌玩家</h3>
+        <div id="tanyou-pick" class="player-pick multi"></div>
+        <button class="btn primary" id="btn-koei-confirm">确认流局</button>
+      </div>
+    </div>
+
+    <!-- ============ 模态：手动修正-修正类型 ============ -->
+    <div class="modal-overlay" id="modal-adjust">
+      <div class="modal">
+        <span class="close-x">×</span>
+        <h3>选择修正类型</h3>
+        <button class="btn" id="btn-adjust-type-score">修正分数</button>
+        <button class="btn" id="btn-adjust-type-round">修正所在局</button>
+        <button class="btn" id="btn-adjust-type-honba">修正本场数</button>
+        <button class="btn" id="btn-adjust-type-kyotaku">修正供托点</button>
+      </div>
+    </div>
+
+    <!-- ============ 模态：手动修正-选人（修正分数） ============ -->
+    <div class="modal-overlay" id="modal-adjust-score">
+      <div class="modal">
+        <span class="close-x">×</span>
+        <h3>选择要修正分数的玩家</h3>
+        <div id="adjust-pick" class="player-pick"></div>
+      </div>
+    </div>
+
+    <!-- ============ 模态：手动修正-填增减（修正分数） ============ -->
+    <div class="modal-overlay" id="modal-adjust-amount">
+      <div class="modal">
+        <span class="close-x">×</span>
+        <h3>手动修正分数</h3>
+        <div class="notice ok" id="adjust-name">玩家</div>
+        <div class="field">
+          <input type="number" class="num-input" id="adjust-delta" placeholder="输入增减分（可正可负）">
+        </div>
+        <button class="btn primary" id="btn-adjust-confirm">确认修正</button>
+      </div>
+    </div>
+
+    <!-- ============ 模态：手动修正-修正所在局 ============ -->
+    <div class="modal-overlay" id="modal-adjust-round">
+      <div class="modal">
+        <span class="close-x">×</span>
+        <h3>修正所在局</h3>
+        <div class="hint">当前：<span id="adjust-round-current"></span></div>
+        <div id="round-pick-grid" class="round-grid"></div>
+        <div class="notice ok" id="adjust-round-preview" style="display:none"></div>
+        <div class="hint">系统将按起庄规则重排庄家与各家方位，不改动各玩家分数 / 本场 / 供托</div>
+        <button class="btn primary" id="btn-round-confirm" disabled>确认修正</button>
+      </div>
+    </div>
+
+    <!-- ============ 模态：手动修正-修正本场数 ============ -->
+    <div class="modal-overlay" id="modal-adjust-honba">
+      <div class="modal">
+        <span class="close-x">×</span>
+        <h3>修正本场数</h3>
+        <div class="notice ok" id="adjust-honba-current">当前本场 0 本</div>
+        <div class="field">
+          <label>本场数（0 ~ 20）</label>
+          <input type="number" class="num-input" id="adjust-honba-value" placeholder="输入新本场数" min="0" max="20">
+        </div>
+        <div class="notice warn">此后每笔和牌结算将按新本场数自动加算（每本 300 点），此前已结算局不追溯。</div>
+        <button class="btn primary" id="btn-honba-confirm">确认修正</button>
+      </div>
+    </div>
+
+    <!-- ============ 模态：手动修正-修正供托点 ============ -->
+    <div class="modal-overlay" id="modal-adjust-kyotaku">
+      <div class="modal">
+        <span class="close-x">×</span>
+        <h3>修正供托点</h3>
+        <div class="notice ok" id="adjust-kyotaku-current">当前供托 0 点</div>
+        <div class="field">
+          <label>供托点数（0 ~ 20000）</label>
+          <input type="number" class="num-input" id="adjust-kyotaku-value" placeholder="输入新供托点数" min="0" max="20000">
+        </div>
+        <div class="quick-step">
+          <button class="btn" id="btn-kyotaku-minus">−1000</button>
+          <button class="btn" id="btn-kyotaku-plus">+1000</button>
+        </div>
+        <div class="field">
+          <label>承担差额的玩家（差额由此玩家分中补缴 / 取回，保持场上总分守恒）</label>
+          <select id="adjust-kyotaku-payer"></select>
+        </div>
+        <div class="notice warn">供托增加 = 该玩家补缴入池（扣分）；供托减少 = 该玩家取回（加分）。</div>
+        <button class="btn primary" id="btn-kyotaku-confirm">确认修正</button>
+      </div>
+    </div>
+
+    <!-- ============ 模态：扫描二维码加入（只读本机工具，不占操作权） ============ -->
+    <div class="modal-overlay" id="modal-scanqr">
+      <div class="modal modal-scanqr">
+        <span class="close-x">×</span>
+        <h3>扫描二维码加入</h3>
+        <div class="scan-view">
+          <video id="qr-video" class="scan-video" playsinline muted autoplay></video>
+          <div class="scan-frame"></div>
+        </div>
+        <div class="scan-status" id="scan-status">将房主手机上的二维码放入框内</div>
+        <button class="btn" id="btn-scan-close">关闭</button>
+      </div>
+    </div>
+
+    <!-- ============ 模态：通用确认 ============ -->
+    <div class="modal-overlay" id="modal-confirm">
+      <div class="modal">
+        <h3 id="confirm-title">确认</h3>
+        <div class="notice warn" id="confirm-msg"></div>
+        <button class="btn" id="btn-confirm-cancel">取消</button>
+        <button class="btn primary" id="btn-confirm-ok">确定</button>
+      </div>
+    </div>
+
+    <!-- ============ 模态：结束对局 ============ -->
+    <div class="modal-overlay" id="modal-end">
+      <div class="modal">
+        <span class="close-x">×</span>
+        <h3>结束对局</h3>
+        <div class="notice warn">确定要结束本局对局吗？结束后将保存到历史记录。</div>
+        <button class="btn primary" id="btn-end-confirm">结束并保存</button>
+        <button class="btn ghost" id="btn-end-history">查看历史记录</button>
+      </div>
+    </div>
+
+    <!-- ============ 模态：结束对局-存在剩余供托警告 ============ -->
+    <div class="modal-overlay" id="modal-end-kyotaku">
+      <div class="modal">
+        <span class="close-x">×</span>
+        <h3>当前存在剩余供托</h3>
+        <div class="notice warn" id="end-kyotaku-msg"></div>
+        <button class="btn primary" id="btn-end-fix-kyotaku">修正供托点</button>
+        <button class="btn" id="btn-end-kyotaku-close">关闭</button>
+      </div>
+    </div>
+
+    <!-- ============ 模态：历史详情 ============ -->
+    <div class="modal-overlay" id="modal-detail">
+      <div class="modal">
+        <span class="close-x">×</span>
+        <h3 id="detail-title">对局详情</h3>
+        <div id="detail-body"></div>
+        <button class="btn danger" id="btn-detail-delete" style="width:100%;margin-top:12px">删除本对局记录</button>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast"></div>
+  </div>
+
+  <script src="js/rules.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/net.js"></script>
+  <!-- 纯 JS 二维码生成库（离线可用，供房主生成"扫码加入"二维码） -->
+  <script src="js/qrcode.js"></script>
+  <!-- 纯 JS 二维码解码库 jsQR（离线可用，供"扫描二维码加入"识别画面中的二维码） -->
+  <script src="js/jsqr.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

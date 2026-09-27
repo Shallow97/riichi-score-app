@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 访问局域网服务器所需权限 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- 锁屏保活：PARTIAL_WAKE_LOCK 让 CPU 在息屏后仍运行服务器（不要求保持亮屏） -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Android 8.0+ 前台服务需此权限 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Android 14 (API 34) 必须声明与 foregroundServiceType 对应的细分权限，否则 startForeground 会抛 SecurityException 闪退 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- 扫码加入他人对局：需要用摄像头读取二维码（运行时申请，被拒只影响扫码，不影响其余功能） -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- 声明非必需，避免无摄像头设备（模拟器/平板）被应用市场过滤 -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.RiichiScore"
+        android:usesCleartextTraffic="true">
+
+        <!-- usesCleartextTraffic=true 允许 http:// 与 ws:// 明文流量（局域网自建服务器） -->
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- 前台服务：承载内嵌服务器 + 锁屏保活 -->
+        <service
+            android:name=".ServerService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+    </application>
+</manifest>

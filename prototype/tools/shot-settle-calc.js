@@ -1,0 +1,121 @@
+/**
+ * shot-settle-calc.js — 真 Chrome(CDP) 渲染截图：结算填分 ⇄ 番符表联动
+ *
+ * 用途：jsdom 无布局、测不出层叠与置灰效果，改这类弹窗 UI 后用本脚本出真图复核。
+ * 覆盖：结算填分弹窗（含「点数计算」按钮）→ 番符表叠层 + 座位锁定 → 关闭回填。
+ *
+ * 关键前置（踩过坑）：
+ *   1. **不要同时起 serve.js** —— 页面会连上 ws://127.0.0.1:8765/ws 被当成"成员"，
+ *      `btn-create-game` 变异步（toast「对局由房主建立，请等待房主操作」），步骤脚本全乱。
+ *      直接 file:// 打开即为单机模式，最省事。
+ *   2. chrome 用 `--headless=new --remote-debugging-port=9333 --user-data-dir=D:/_cdp_x`；
+ *      window-size 无头下最小 512px，准图靠 `Emulation.setDeviceMetricsOverride(393x852, dsf2)`。
+ *
+ * 用法：
+ *   1) chrome --headless=new --disable-gpu --no-proxy-server --remote-debugging-port=9333 \
+ *        --user-data-dir=D:/_cdp_x --window-size=393,852 "file:///D:/日麻计分APP/prototype/index.html"
+ *   2) node prototype/tools/shot-settle-calc.js      → 图输出到 .workbuddy/tmp/
+ *
+ * 改别的界面时复制本文件、替换中间的 ev(...) 步骤即可复用骨架。
+ */
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
+const OUT = 'D:/日麻计分APP/.workbuddy/tmp';
+fs.mkdirSync(OUT, { recursive: true });
+
+function getJson(url) {
+  return new Promise((res, rej) => {
+    http.get(url, (r) => {
+      let s = '';
+      r.on('data', (d) => { s += d; });
+      r.on('end', () => { try { res(JSON.parse(s)); } catch (e) { rej(e); } });
+    }).on('error', rej);
+  });
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+(async () => {
+  const targets = await getJson('http://127.0.0.1:9333/json');
+  const page = targets.find((t) => t.type === 'page' && t.url.indexOf('index.html') >= 0)
+    || targets.find((t) => t.type === 'page' && t.url.indexOf('8765') >= 0)
+    || targets.find((t) => t.type === 'page');
+  if (!page) throw new Error('没有 page 调试目标');
+  console.log('target:', page.url);
+
+  const ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((res, rej) => { ws.onopen = res; ws.onerror = () => rej(new Error('ws 连接失败')); });
+  let id = 0;
+  const pending = new Map();
+  ws.onmessage = (e) => {
+    const m = JSON.parse(e.data);
+    if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
+  };
+  const call = (method, params) => new Promise((res) => {
+    const i = ++id; pending.set(i, res); ws.send(JSON.stringify({ id: i, method, params }));
+  });
+
+  await call('Runtime.enable', {});
+  await call('Page.enable', {});
+  await call('Emulation.setDeviceMetricsOverride', { width: 393, height: 852, deviceScaleFactor: 2, mobile: true });
+
+  async function ev(expr) {
+    const r = await call('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true });
+    if (r.result && r.result.exceptionDetails) throw new Error('页面异常: ' + JSON.stringify(r.result.exceptionDetails).slice(0, 500));
+    return r.result && r.result.result ? r.result.result.value : undefined;
+  }
+  async function shot(name) {
+    const r = await call('Page.captureScreenshot', { format: 'png' });
+    const b64 = r.result && r.result.data;
+    if (!b64) throw new Error('截图失败: ' + JSON.stringify(r).slice(0, 300));
+    const f = path.join(OUT, name);
+    fs.writeFileSync(f, Buffer.from(b64, 'base64'));
+    console.log('saved', f, fs.statSync(f).size, 'bytes');
+  }
+
+  for (let i = 0; i < 60; i++) {
+    if (await ev("!!document.getElementById('btn-create-game')")) break;
+    await sleep(250);
+  }
+
+  await ev(`
+    document.getElementById('mode-4').click();
+    document.getElementById('btn-next-setup').click();
+    Array.from(document.querySelectorAll('.setup-name')).forEach(function(inp,i){ inp.value = '玩家'+(i+1); });
+    document.getElementById('btn-create-game').click();
+    'ok';`);
+  await sleep(500);
+  await shot('01-main.png');
+
+  await ev(`
+    document.getElementById('btn-tsumo-ron').click();
+    document.getElementById('btn-settle-ron').click();
+    document.querySelectorAll('#pay-pick .p')[1].click();
+    document.querySelectorAll('#recv-pick .p')[0].click();
+    'ok';`);
+  await sleep(500);
+  await shot('02-settle-amount.png');
+  console.log('填分弹窗 show =', await ev("document.getElementById('modal-settle-amount').classList.contains('show')"));
+
+  await ev("document.getElementById('btn-settle-calc').click(); 'ok'");
+  await sleep(500);
+  await shot('03-fu-table-locked.png');
+  console.log('番符表 show =', await ev("document.getElementById('modal-calc').classList.contains('show')"),
+    '/ 填分弹窗仍 show =', await ev("document.getElementById('modal-settle-amount').classList.contains('show')"),
+    '/ oya active =', await ev("document.getElementById('calc-seat-oya').classList.contains('active')"),
+    '/ hint =', await ev("document.getElementById('calc-link-hint').textContent"));
+
+  await ev(`
+    var h = document.getElementById('calc-han'); h.value = '3';
+    h.dispatchEvent(new Event('change', { bubbles: true }));
+    document.getElementById('btn-calc-close').click();
+    'ok';`);
+  await sleep(500);
+  await shot('04-filled.png');
+  console.log('回填值 =', await ev("document.getElementById('settle-amount').value"));
+
+  ws.close();
+  console.log('done');
+  setTimeout(() => process.exit(0), 200);
+})().catch((e) => { console.error('✗', e.message); process.exit(1); });

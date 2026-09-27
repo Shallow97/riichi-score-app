@@ -1,0 +1,27 @@
+# ================= 构建产物（可重新生成，不入库） =================
+*.apk
+android/.gradle/
+android/build/
+android/app/build/
+android/captures/
+android/local.properties
+.gradle/
+
+# ================= 依赖（可 npm install 还原） =================
+node_modules/
+
+# ================= IDE（遵循 .idea/.gitignore 的意图只排机器相关项） =================
+.idea/workspace.xml
+.idea/shelf/
+.vscode/
+*.swp
+
+# ================= WorkBuddy 临时产物 =================
+# memory/ 是项目知识（日志 + 长期约定），要入库；tmp/ 与 scratch/ 是过程产物，不入库
+.workbuddy/tmp/
+.workbuddy/scratch/
+
+# ================= 系统 =================
+Thumbs.db
+Desktop.ini
+.DS_Store

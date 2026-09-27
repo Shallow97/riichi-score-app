@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 浅绿圆角背景（全幅覆盖，兼容任意 launcher 裁剪形状） -->
+    <path
+        android:fillColor="#9ED2A6"
+        android:pathData="M6,28 a22,22 0 0 1 22,-22 h52 a22,22 0 0 1 22,22 v52 a22,22 0 0 1 -22,22 h-52 a22,22 0 0 1 -22,-22 z" />
+
+    <!-- 水平白色立直棒（还原程序桌面 .riichi-stick：白条 + 灰蓝描边） -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#9aa5a7"
+        android:strokeWidth="2"
+        android:pathData="M24,46 h60 a8,8 0 0 1 8,8 a8,8 0 0 1 -8,8 h-60 a8,8 0 0 1 -8,-8 a8,8 0 0 1 8,-8 z" />
+
+    <!-- 棒身中部红色圆点（象征千点棒红色标记） -->
+    <path
+        android:fillColor="#e53935"
+        android:pathData="M54,47 a7,7 0 1 1 0,14 a7,7 0 1 1 0,-14 z" />
+</vector>

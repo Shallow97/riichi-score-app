@@ -1,0 +1,30 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.riichi.score'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.riichi.score"
+        minSdk 24          // Android 7.0+，覆盖绝大多数设备
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    // 仅使用系统 WebView，无需额外依赖
+}
