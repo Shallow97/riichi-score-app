@@ -69,6 +69,6 @@
 - view-lock 只改渲染 class；`bindAll` 有 `__appBound` 幂等守卫
 
 ## UI 约束
-- 面向固定窄屏 ~393px（无 `@media`）；index.html 4 `.page` + 约 29 `#modal-*`
+- 面向固定窄屏 ~393px（无 `@media`）；index.html 4 `.page`（mode/setup/main/history）+ **27** 个 `#modal-*`
 - ⚠️ 改版真正成本是 tests/ 上千处 DOM 断言（唯 `view-lock-test.js` 读 style.css 的 `.modal-view .view-actions .btn`）→ 不改 class 名/HTML 结构则全绿
 - 视觉稿/三方案在 `design-preview/`
