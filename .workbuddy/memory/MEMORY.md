@@ -37,6 +37,16 @@
   行内多按钮一律显式 `margin-top: 0` + 统一 `display/align-items/justify-content/padding`（扫码这类带图标的，
   只额外给 `gap`，其余盒模型与邻按钮完全一致）。**不要靠 `padding` 撑高——靠内容居中撑高才稳。**
 
+## 版本管理（GitHub，2026-09-28 建立）
+- 远端 **`https://github.com/Shallow97/riichi-score-app`（私有）**，分支 `main`，首提交 `aaa899e`（90 文件 / 2.92 MB）
+- 身份：仓库级 `user.name=Shallow97`、`user.email=Shallow97@users.noreply.github.com`
+- ⚠️ **对 github.com 必须走 Clash `127.0.0.1:7897`**：沙箱内被沙箱代理拦（CONNECT 502，只放行 `api.github.com`）；沙箱外直连时通时断（多 IP 轮询）。
+  仓库级已设 `http.proxy`/`https.proxy`，另加 `-c http.version=HTTP/1.1`（直连时曾报 `Empty reply from server`）
+- 凭据：GCM（PortableGit 自带 2.9.0）已 `github login` 账号 Shallow97 → Windows 凭据管理器；`credential.helper=helper-selector` 自动取到，**不要**把 token 写进 remote URL
+- ⚠️ **GCM 的授权流程必须在沙箱外跑**（.NET 代理解析优先系统设置，不吃 `HTTPS_PROXY` 覆盖）；`--device --no-ui` 无 TTY 时静默挂住，用 `--browser`
+- 入库范围：`.apk`／`node_modules/`／`android/**/build/`／`.workbuddy/{tmp,scratch}/` 已忽略；**保留** `.workbuddy/memory/` 与 `design-preview/`
+- 核对远端内容别用"文件总数"（tree 节点会多算）：`GET /git/trees/main?recursive=1` 后**过滤 `type=="blob"`** 再与 `git ls-files` diff
+
 ## 计分口径（用户规定，勿改）
 - 守恒：场上总分 = 玩家分和 + 供托池（四人 100000 / 三人 105000）
 - 本场费：荣和一人付 `300N`；自摸每家付 `100N`（三人缺北自摸损：收 200N、2 家各付 100N）
