@@ -172,22 +172,38 @@ async function main() {
   assert($('settle-amount').value === ronFieldBefore, '自摸联动不回填荣和的分数输入框（两套录入互不串写）');
   assert(!$('calc-seat-oya').classList.contains('locked'), '关闭后座位锁定被解除（恢复自由模式）');
 
-  // 端到端：核对明细要能读到回填的分类金额
+  // 端到端：点「确认结算」直接入账（核对明细已移除），用各家分数变化验证分类回填值被正确读取
+  function readPtsMap() {
+    const m = {};
+    document.querySelectorAll('#table-seats .seat').forEach((s) => {
+      m[s.querySelector('.name').textContent] = parseInt(s.querySelector('.pts').textContent, 10);
+    });
+    return m;
+  }
+  const ptsBeforeKo = readPtsMap();
   $('btn-tsumo-confirm').click();
-  assert($('modal-tsumo-review').classList.contains('show'), '点「下一步」进入明细核对');
-  const reviewTxt = $('tsumo-review-list').textContent.replace(/\s+/g, ' ');
-  assert(reviewTxt.includes('1000') && reviewTxt.includes('2000'), '核对明细读到分类回填值：' + reviewTxt);
-  assert($('tsumo-review-total').textContent.includes('4000'),
-    '自摸者共收 4000（闲1000×1+庄2000×1 自动复制到其余闲家），实得 ' + $('tsumo-review-total').textContent);
-  $('btn-tsumo-review-back').click();
-  assert($('modal-tsumo-amounts').classList.contains('show'), '「返回修改」回到填额层，回填值保留');
-  $('modal-tsumo-amounts').querySelector('.close-x').click();
+  assert($('modal-result').classList.contains('show'), '点「确认结算」直接进入结算结果（核对明细已移除）');
+  const ptsAfterKo = readPtsMap();
+  // 注：此前双响含庄家 → 连庄、本场 0→1，故自摸每家加摊 100 点（闲+300 / 庄−100）
+  assert(ptsAfterKo[koName] - ptsBeforeKo[koName] === 4000 + 300,
+    '自摸者收 4000+本场300（闲1000×2家+庄2000×1，分类回填值被正确读取），实得 ' + (ptsAfterKo[koName] - ptsBeforeKo[koName]));
+  assert(ptsAfterKo[dealerName] - ptsBeforeKo[dealerName] === -2000 - 100,
+    '庄家付亲额2000+本场100，实得 ' + (ptsAfterKo[dealerName] - ptsBeforeKo[dealerName]));
+  assert(ptsAfterKo[windMap['西']] - ptsBeforeKo[windMap['西']] === -1000 - 100, '闲家(西)付子额1000+本场100');
+  assert(ptsAfterKo[windMap['北']] - ptsBeforeKo[windMap['北']] === -1000 - 100, '闲家(北)付子额1000+本场100');
+  $('btn-result-close').click();
 
   // ---------- 场景4：自摸者 = 庄家 → 座位锁 oya、单格回填 ----------
   console.log('\n== 七、自摸路径（庄家自摸）：锁 oya、单格回填 ==\n');
+  // 场景3已真入账（闲家自摸换庄），重读方位拿当前庄家
+  const windMap2 = {};
+  document.querySelectorAll('#table-seats .seat').forEach((s) => {
+    windMap2[s.querySelector('.wind').textContent] = s.querySelector('.name').textContent;
+  });
+  const dealerName2 = windMap2['东'];
   $('btn-tsumo-ron').click();
   $('btn-settle-tsumo').click();
-  pickText('#tsumo-pick .p', dealerName).click();
+  pickText('#tsumo-pick .p', dealerName2).click();
   assert($('modal-tsumo-amounts').classList.contains('show'), '庄家自摸进入填额弹窗');
   assert(document.querySelectorAll('#tsumo-amount-list .tsumo-shared').length === 1,
     '庄家自摸只出现一个「每位闲家应付」输入框');
@@ -200,13 +216,16 @@ async function main() {
   $('btn-calc-close').click();
   const sharedInp = $('tsumo-amount-list').querySelector('.tsumo-shared');
   assert(sharedInp.value === '2000', '庄自摸「每位闲家应付」填入 2000，实得 ' + sharedInp.value);
+  const ptsBeforeOya = readPtsMap();
   $('btn-tsumo-confirm').click();
-  assert($('tsumo-review-total').textContent.includes('6000'),
-    '庄自摸者共收 6000（2000×3 家），实得 ' + $('tsumo-review-total').textContent);
+  assert($('modal-result').classList.contains('show'), '庄自摸点「确认结算」直接进入结算结果');
+  const ptsAfterOya = readPtsMap();
+  assert(ptsAfterOya[dealerName2] - ptsBeforeOya[dealerName2] === 6000,
+    '庄自摸者共收 6000（2000×3 家），实得 ' + (ptsAfterOya[dealerName2] - ptsBeforeOya[dealerName2]));
+  $('btn-result-close').click();
 
   // ---------- 场景5：三人局 → 番符表自摸总额要扣掉"缺北"那一份 ----------
   console.log('\n== 八、三人局：番符表自摸总额扣掉缺北一份 ==\n');
-  $('modal-tsumo-review').querySelector('.close-x').click(); // 先收拾现场
   $('btn-new-game').click();
   $('btn-confirm-ok').click();
   assert($('page-mode').classList.contains('active'), '「新对局」回到模式选择页');

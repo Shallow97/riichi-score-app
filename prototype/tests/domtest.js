@@ -168,24 +168,12 @@ async function main() {
   assert(document.querySelectorAll('.tsumo-shared').length === 1, '庄家自摸只出现一个"每位闲家应付"输入框');
   assert(document.querySelectorAll('.tsumo-koha').length === 0 && document.querySelectorAll('.tsumo-oya').length === 0,
     '庄家自摸不出现闲家/庄家两个输入框');
-  // 填一次 1000，程序自动复制给其余各闲家
+  // 填一次 1000，程序自动复制给其余各闲家，点「确认结算」直接入账（核对明细弹窗已移除）
   document.querySelector('.tsumo-shared').value = '1000';
   document.getElementById('btn-tsumo-confirm').click();
-  assert(document.getElementById('modal-tsumo-review').classList.contains('show'), '点"下一步"进入明细核对弹窗');
-  // 明细应列出所有付分闲家各 1000
-  const reviewText = document.getElementById('tsumo-review-list').textContent;
-  const reviewCount = reviewText.split('付 1000 点').length - 1;
-  assert(reviewCount === 2, '明细核对列出2家闲家各付1000（庄家自摸复制给所有闲家），实得 ' + reviewCount);
-  // 返回修改可退回输入层
-  document.getElementById('btn-tsumo-review-back').click();
-  assert(document.getElementById('modal-tsumo-amounts').classList.contains('show'), '点"返回修改"回到输入层');
-  assert(document.getElementById('modal-tsumo-review').classList.contains('show') === false, '明细核对弹窗关闭');
-  // 重新进入核对并入账
-  document.getElementById('btn-tsumo-confirm').click();
-  assert(document.getElementById('modal-tsumo-review').classList.contains('show'), '再次进入明细核对');
-  document.getElementById('btn-tsumo-review-confirm').click();
-  assert(document.getElementById('modal-tsumo-review').classList.contains('show') === false, '确认入账后明细弹窗关闭');
-  assert(document.getElementById('modal-result').classList.contains('show'), '自摸显示结算结果');
+  assert(document.getElementById('modal-tsumo-review') === null, '核对明细弹窗已从DOM移除');
+  assert(document.getElementById('modal-tsumo-amounts').classList.contains('show') === false, '确认结算后填额弹窗关闭');
+  assert(document.getElementById('modal-result').classList.contains('show'), '点"确认结算"直接显示结算结果');
   // 验证自摸者(庄)多笔转移净变化累加：其余2闲家各1000 → 显示 +2000
   const tsumoResultText = document.getElementById('result-players').textContent;
   assert(tsumoResultText.includes('+2000'), '庄家自摸者结果弹窗显示多笔转移累加(+2000)');
@@ -439,8 +427,6 @@ async function main() {
   assert(document.querySelectorAll('.tsumo-shared').length === 1, '四人局庄家自摸只出现一个"每位闲家应付"输入框');
   document.querySelector('.tsumo-shared').value = '1000';
   document.getElementById('btn-tsumo-confirm').click();
-  assert(document.getElementById('modal-tsumo-review').classList.contains('show'), '庄家自摸点下一步进入明细核对');
-  document.getElementById('btn-tsumo-review-confirm').click();
   document.getElementById('btn-result-close').click();
   const ptsAfterTsumo = {};
   Array.from(document.querySelectorAll('#table-seats .seat')).forEach((s) => {

@@ -393,8 +393,8 @@
         <span class="close-x">×</span>
         <h3>本局和牌类型</h3>
         <div class="notice ok" id="settle-type-honba">当前本场 0</div>
-        <button class="btn" id="btn-settle-ron">荣和（点炮，一人放铳）</button>
-        <button class="btn primary" id="btn-settle-tsumo">自摸（自摸者向各家收分）</button>
+        <button class="btn" id="btn-settle-ron">荣和</button>
+        <button class="btn primary" id="btn-settle-tsumo">自摸</button>
       </div>
     </div>
 
@@ -402,7 +402,7 @@
     <div class="modal-overlay" id="modal-settle-pay">
       <div class="modal">
         <span class="close-x">×</span>
-        <h3>本局谁在付分？（放铳 / 自摸应付）</h3>
+        <h3>本局谁在付分？</h3>
         <div id="pay-pick" class="player-pick"></div>
       </div>
     </div>
@@ -427,7 +427,7 @@
           <input type="number" class="num-input" id="settle-amount" placeholder="输入分数" min="0">
         </div>
         <button class="btn ghost" id="btn-settle-calc">点数计算（番符表）</button>
-        <button class="btn primary" id="btn-settle-confirm">确认本笔</button>
+        <button class="btn primary" id="btn-settle-confirm">确认结算</button>
         <div class="hint">点数计算按本笔和牌者的亲/子身份锁定座位，关闭番符表后结果自动填入上方输入框</div>
       </div>
     </div>
@@ -437,7 +437,7 @@
       <div class="modal">
         <h3>本局是否还有其它和牌者？</h3>
         <div class="notice ok" id="settle-queue-count">本局已有 0 位和牌者收分</div>
-        <button class="btn" id="btn-settle-more-yes">还有（继续录入）</button>
+        <button class="btn" id="btn-settle-more-yes">继续录入</button>
         <button class="btn primary" id="btn-settle-more-done">没有，完成本局</button>
       </div>
     </div>
@@ -446,7 +446,7 @@
     <div class="modal-overlay" id="modal-tsumo">
       <div class="modal">
         <span class="close-x">×</span>
-        <h3>选择自摸者（和牌者）</h3>
+        <h3>选择自摸者</h3>
         <div id="tsumo-pick" class="player-pick"></div>
       </div>
     </div>
@@ -455,26 +455,13 @@
     <div class="modal-overlay" id="modal-tsumo-amounts">
       <div class="modal">
         <span class="close-x">×</span>
-        <h3>自摸结算 — 输入应付额</h3>
+        <h3>自摸结算</h3>
         <div class="notice ok" id="tsumo-recv-name">自摸者</div>
         <div id="tsumo-amount-list"></div>
         <button class="btn ghost" id="btn-tsumo-calc">点数计算（番符表）</button>
         <div class="hint">按本笔自摸者的亲/子身份锁定座位；关闭番符表后，按「闲家应付 / 庄家应付」分类自动填入上方输入框</div>
         <div class="hint" id="tsumo-honba-hint">本场加算将自动计入</div>
-        <button class="btn primary" id="btn-tsumo-confirm">下一步：核对明细</button>
-      </div>
-    </div>
-
-    <!-- ============ 模态：自摸-明细核对（确认前展示各家应付） ============ -->
-    <div class="modal-overlay" id="modal-tsumo-review">
-      <div class="modal">
-        <span class="close-x">×</span>
-        <h3>自摸结算 — 核对明细</h3>
-        <div class="notice ok" id="tsumo-review-title">自摸者：</div>
-        <div id="tsumo-review-list"></div>
-        <div class="notice ok" id="tsumo-review-total"></div>
-        <button class="btn" id="btn-tsumo-review-back">返回修改</button>
-        <button class="btn primary" id="btn-tsumo-review-confirm">确认入账</button>
+        <button class="btn primary" id="btn-tsumo-confirm">确认结算</button>
       </div>
     </div>
 

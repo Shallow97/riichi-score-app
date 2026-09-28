@@ -9,22 +9,30 @@
   --accent: #1E7A4E;         /* 品牌绿(主按钮/标题/方位) */
   --accent-dark: #155F3D;    /* 品牌绿按压态 */
   --accent-light: #E6F0EA;   /* 桌面淡淡绿 */
-  --gold: #C9992E;           /* 金色(辅助强调) */
+  --accent-soft: #E3F0E8;    /* 选中态浅绿衬底（player-pick / round-cell 共用） */
+  --gold: #8F6B12;           /* 金色(辅助强调)；加深版，白底对比 4.91:1（旧 #C9992E 仅 2.60 不达 AA） */
   --border: #E3E8E6;         /* 发丝线描边 */
   --border-strong: #C4D0CA;  /* 较强描边 */
 
   --text: #27343D;           /* 正文 墨 */
   --text-strong: #1C2B24;    /* 数字/关键 深墨 */
-  --text-dim: #8A979E;       /* 弱化文字 */
+  --text-dim: #5F6E76;       /* 弱化文字；加深版，白底对比 5.28:1（旧 #8A979E 仅 3.00 不达 AA） */
 
   --btn-bg: #FFFFFF;         /* 次按钮 纯白 */
   --btn-text: #1E7A4E;       /* 次按钮文字 品牌绿 */
   --btn-border: #C4D0CA;
 
-  --danger: #D94F3D;
+  --danger: #D94F3D;         /* 危险底色/大字号负分（大文字 ≥3:1 达标） */
+  --danger-text: #C13E2E;    /* 危险小字用；白底对比 5.26:1（#D94F3D 仅 4.09） */
+  --danger-dark: #8e2a1f;    /* 危险按钮按压态 */
   --ok: #1E9E63;
   --red: #D94F3D;
-  --shadow: 0 2px 8px rgba(0,0,0,.08);
+  --btn-press: #EFF3F0;      /* 次按钮按压态（白底微暗） */
+
+  /* 阴影两档（Token 收敛）：小卡/座位用 -1，弹窗/悬浮件用 -2 */
+  --shadow-1: 0 1px 3px rgba(28,43,36,.10);
+  --shadow-2: 0 4px 14px rgba(28,43,36,.14);
+  --shadow: var(--shadow-2); /* 兼容旧引用 */
 }
 
 html, body {
@@ -46,6 +54,8 @@ html, body {
   flex-direction: column;
   min-height: 100vh;
   padding: 16px;
+  /* 全面屏手势条不遮挡内容 */
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   max-width: 480px;
   margin: 0 auto;
   width: 100%;
@@ -76,26 +86,40 @@ html, body {
 }
 
 /* ===== 按钮 ===== */
+/* 统一按钮语言：不再用 4px 厚底拟物（与描边类组件两套语言混屏），
+   实心按钮用轻投影表达"可按"，次按钮/幽灵按钮用描边，按压统一 scale 反馈 */
 .btn {
   display: block;
   width: 100%;
   padding: 14px;
   border: none;
-  border-radius: 12px;
+  border-radius: 14px;
   font-size: 16px;
   font-weight: 600;
   background: var(--btn-bg);
   color: var(--btn-text);
-  border-bottom: 4px solid var(--btn-border);
+  box-shadow: 0 0 0 1px var(--btn-border), var(--shadow-1);
   cursor: pointer;
-  transition: transform .05s, opacity .2s;
+  transition: transform .05s, background .05s, opacity .2s;
 }
-.btn:active { transform: translateY(2px); border-bottom-width: 2px; }
-.btn.primary { background: var(--accent); border-bottom-color: var(--accent-dark); color: #fff; }
-.btn.danger { background: var(--danger); border-bottom-color: #8e2a1f; color: #fff; }
-.btn.ghost { background: transparent; border: 1px solid var(--border-strong); color: var(--btn-text); border-bottom-color: var(--border-strong); }
+.btn:active { transform: scale(.98); background: var(--btn-press); }
+.btn.primary { background: var(--accent); box-shadow: 0 2px 6px rgba(30,122,78,.28); color: #fff; }
+.btn.primary:active { background: var(--accent-dark); }
+.btn.danger { background: var(--danger); box-shadow: 0 2px 6px rgba(217,79,61,.30); color: #fff; }
+.btn.danger:active { background: var(--danger-dark); }
+.btn.ghost { background: transparent; border: 1px solid var(--border-strong); color: var(--btn-text); box-shadow: var(--shadow-1); }
+.btn.ghost:active { background: rgba(30,122,78,.06); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn + .btn { margin-top: 10px; }
+
+/* flex/grid 容器内的按钮：间距一律由容器 gap 接管，归零 .btn + .btn 的 margin-top。
+   （历史坑：相邻 .btn 的 margin-top 会把后一个按钮顶下 10px 且拉伸不齐，见 .action-grid 注释）
+   新增 flex/grid 按钮容器时请把选择器加入此列表，勿依赖各处手动归零。 */
+.action-grid .btn,
+.quick-step .btn,
+.dice-actions .btn,
+.modal-view .view-actions .btn,
+.net-joinroom-row .btn { margin-top: 0; }
 
 /* ===== 表单 ===== */
 .field { margin-bottom: 14px; }
@@ -166,14 +190,14 @@ html, body {
 .mode-card {
   background: var(--surface);
   border: 2px solid var(--border);
-  border-radius: 16px;
+  border-radius: 14px;
   padding: 22px 12px;
   text-align: center;
   cursor: pointer;
   transition: all .15s;
 }
 .mode-card.selected { border-color: var(--accent); background: var(--surface-alt); }
-.mode-card .big { font-size: 34px; font-weight: 800; color: var(--accent); }
+.mode-card .big { font-size: 34px; font-weight: 700; color: var(--accent); }
 .mode-card .sub { font-size: 13px; color: var(--text-dim); margin-top: 6px; }
 
 /* ===== 对局桌面 ===== */
@@ -186,7 +210,7 @@ html, body {
   background:
     radial-gradient(circle at 50% 50%, #FFFFFF 0%, var(--accent-light) 55%, #CDE0D4 100%);
   border-radius: 20px;
-  box-shadow: inset 0 0 30px rgba(30,122,78,.10), 0 4px 12px rgba(0,0,0,.08);
+  box-shadow: inset 0 0 30px rgba(30,122,78,.10), var(--shadow-2);
   border: 4px solid #C4D5CA;
 }
 
@@ -194,11 +218,11 @@ html, body {
   position: absolute;
   width: 108px;
   background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
   padding: 8px 6px;
   text-align: center;
-  box-shadow: 0 2px 6px rgba(0,0,0,.05);
+  box-shadow: var(--shadow-1);
 }
 /* 南=下方(自己)，北=上方，东=左，西=右 */
 .seat-south { left: 50%; bottom: 8px; transform: translateX(-50%); }
@@ -206,7 +230,8 @@ html, body {
 .seat-east  { left: 8px; top: 50%; transform: translateY(-50%); }
 .seat-west  { right: 8px; top: 50%; transform: translateY(-50%); }
 
-.seat .wind { font-size: 18px; font-weight: 800; color: var(--accent); }
+/* 信息层级：分数是第一焦点 → 分数加大+等宽数字，风字收敛（东=庄家为既定约定，不加徽标） */
+.seat .wind { font-size: 14px; font-weight: 700; color: var(--accent); line-height: 1.2; }
 /* 风牌四色（Ardot 设计稿）：东红/南绿/西蓝/北黑 */
 .seat .wind-东 { color: #D94F3D; }
 .seat .wind-南 { color: #2E8B57; }
@@ -218,15 +243,15 @@ html, body {
   top: 2px;
   right: 2px;
   font-size: 9px;
-  font-weight: 800;
+  font-weight: 700;
   color: #fff;
   background: var(--accent);
   border-radius: 6px;
   padding: 1px 5px;
   line-height: 1.4;
 }
-.seat .pts { font-size: 20px; font-weight: 800; color: var(--text-strong); }
-.seat .pts.neg { color: #D94F3D; }
+.seat .pts { font-size: 22px; font-weight: 700; color: var(--text-strong); font-variant-numeric: tabular-nums; letter-spacing: -.3px; }
+.seat .pts.neg { color: #D94F3D; }  /* 20px+ 粗体属大文字，3:1 即达标，保持品牌危险红 */
 .seat .pts.neg2 { color: #C9992E; }
 .seat .meta { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
 
@@ -244,7 +269,7 @@ html, body {
   border: 2px solid rgba(255,255,255,.6);
   border-radius: 50%;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+  box-shadow: var(--shadow-2);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -283,13 +308,13 @@ html, body {
   bottom: auto;
   top: 12px;
   font-size: 24px;
-  font-weight: 900;
+  font-weight: 700; /* 字重收敛：900→700（原 900 与全局 800 一并去除）；下方 translateX 补偿需复核 */
   font-family: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
   line-height: 1;
 }
 .help-q {
   display: inline-block;
-  transform: translateX(5px); /* 用户滑块确认：右移 5px 使问号视觉居中 */
+  transform: translateX(5px); /* 用户滑块确认：右移 5px 使问号视觉居中（900 字重时校准，700 后已截图复核） */
 }
 
 /* 视角切换 弹窗 */
@@ -341,17 +366,22 @@ html, body {
   max-width: 150px;
   padding: 6px 8px;
   border: 1px solid var(--border-strong);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--surface);
   color: var(--text);
   font-size: 14px;
 }
 .calc-seat { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); }
 .calc-seat > span { margin-right: 2px; }
+/* 座位 chip：min-height 44px 达到推荐触控目标 */
 .seat-chip {
-  padding: 5px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 5px 16px;
   border: 1px solid var(--border-strong);
-  border-radius: 16px;
+  border-radius: 22px;
   background: var(--surface);
   color: var(--text);
   font-size: 13px;
@@ -377,7 +407,7 @@ html, body {
 .calc-row { display: flex; align-items: baseline; justify-content: space-between; padding: 4px 0; }
 .calc-row + .calc-row { border-top: 1px solid var(--border); }
 .cr-label { font-size: 13px; color: var(--text); }
-.cr-val { font-size: 18px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+.cr-val { font-size: 18px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
 .calc-note { font-size: 12px; color: var(--text-dim); margin-top: 6px; text-align: center; }
 .calc-note .limit-tag {
   display: inline-block;
@@ -403,7 +433,7 @@ html, body {
   flex: 1;
   padding: 8px 6px;
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   background: transparent;
   color: var(--text);
   font-size: 14px;
@@ -480,23 +510,23 @@ html, body {
   box-shadow: 0 0 0 0.5px rgba(0,0,0,.15);
 }
 
-/* 中心区：局数/本场/供托 */
+/* 中心区：局数/本场/供托（层级收敛：局号从 24px 降到 16px，让位于座位卡分数） */
 .center-info {
   position: absolute;
   left: 50%; top: 50%;
   transform: translate(-50%,-50%);
   text-align: center;
   background: var(--surface);
-  border: 2px solid rgba(30,122,78,.5);
+  border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 12px 18px;
+  padding: 10px 16px;
   min-width: 120px;
-  box-shadow: 0 2px 8px rgba(0,0,0,.06);
+  box-shadow: var(--shadow-1);
 }
-.center-info .round { font-size: 24px; font-weight: 800; color: var(--accent); }
+.center-info .round { font-size: 16px; font-weight: 700; color: var(--accent); }
 .center-info .sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
 .center-info .honba { font-size: 12px; color: var(--text); }
-.center-info .kyotaku { font-size: 15px; color: var(--accent); font-weight: 700; margin-top: 4px; }
+.center-info .kyotaku { font-size: 13px; color: var(--gold); font-weight: 700; margin-top: 4px; }
 
 /* ===== 操作面板 ===== */
 .actions {
@@ -605,7 +635,7 @@ html, body {
 .rl-player-pts { color: var(--text-strong); font-weight: 700; margin-left: 3px; }
 .rl-player-delta { font-weight: 700; margin-left: 4px; }
 .rl-player-delta.up   { color: #1E9E63; }
-.rl-player-delta.down { color: #D94F3D; }
+.rl-player-delta.down { color: var(--danger-text); } /* 13px 小字，用达标的深红 */
 .rl-player-delta.zero { color: var(--text-dim); font-weight: 500; }
 
 /* 历史详情里的分区标题（最终结果 / 逐局分数记录） */
@@ -637,16 +667,41 @@ html, body {
 .modal {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 20px;
   max-width: 420px;
   width: 100%;
   padding: 18px;
   max-height: 85vh;
   overflow-y: auto;
-  box-shadow: 0 8px 30px rgba(0,0,0,.12);
+  box-shadow: var(--shadow-2);
 }
 .modal h3 { color: var(--accent); margin-bottom: 12px; font-size: 17px; text-align: center; }
-.modal .close-x { float: right; cursor: pointer; font-size: 22px; color: var(--text-dim); }
+/* 关闭钮：44×44 触控热区（推荐最小目标），负 margin 抵消 padding 使字形仍在原位 */
+.modal .close-x {
+  float: right;
+  cursor: pointer;
+  font-size: 20px;
+  color: var(--text-dim);
+  width: 44px;
+  height: 44px;
+  margin: -12px -12px 0 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+/* 弹窗出现动画（display 切换逻辑不变，仅视觉过渡） */
+.modal-overlay.show { animation: overlayIn .15s ease-out; }
+.modal-overlay.show .modal { animation: modalIn .18s ease-out; }
+@keyframes overlayIn {
+  from { background: rgba(0,0,0,0); }
+  to   { background: rgba(0,0,0,.45); }
+}
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(.92) translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
 
 /* ===== 骰子弹窗 ===== */
 .modal.modal-dice { max-width: 360px; text-align: center; }
@@ -664,8 +719,8 @@ html, body {
   height: 112px;
   background: #ffffff;
   border: 3px solid #1f2629;
-  border-radius: 18px;
-  box-shadow: 0 3px 8px rgba(0,0,0,.15);
+  border-radius: 20px;
+  box-shadow: var(--shadow-2);
   box-sizing: border-box;
 }
 .die .pip {
@@ -718,7 +773,7 @@ html, body {
   text-align: center;
   cursor: pointer;
 }
-.player-pick .p.selected { border-color: var(--accent); background: #E3F0E8; }
+.player-pick .p.selected { border-color: var(--accent); background: var(--accent-soft); }
 .player-pick .p .wind { color: var(--accent); font-weight: 700; }
 .player-pick .p .pts { font-size: 14px; font-weight: 700; color: var(--text-strong); }
 /* 立直选人：已立直者分数下方显示立直棒（白条+红点），与桌面一致，无高亮 */
@@ -752,7 +807,7 @@ html, body {
   font-size: 14px;
   margin: 10px 0;
 }
-.notice.warn { background: #FDF1EF; border: 1px solid #F0B6AC; color: #D94F3D; }
+.notice.warn { background: #FDF1EF; border: 1px solid #F0B6AC; color: var(--danger-text); }
 .notice.ok { background: #ECF7F0; border: 1px solid #B8DFC9; color: #1E9E63; }
 
 /* 数字输入大 */
@@ -771,7 +826,7 @@ html, body {
   cursor: pointer;
   transition: all .12s;
 }
-.round-cell.cur { border-color: var(--accent); color: var(--accent); background: #E3F0E8; }
+.round-cell.cur { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .round-cell.selected { background: var(--accent); color: #fff; border-color: var(--accent-dark); }
 
 /* 快捷增减按钮（供托 ±1000） */
@@ -782,7 +837,7 @@ html, body {
 .list-item {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 12px;
   margin-bottom: 10px;
   cursor: pointer;
@@ -800,28 +855,30 @@ html, body {
 /* 分栏滚动 */
 .scrollable { flex: 1; overflow-y: auto; }
 
-/* toast */
+/* toast：移到底部（原顶部会压住桌面北家座位卡），并避开手势条 */
 #toast {
   position: fixed;
-  top: 20px; left: 50%;
-  transform: translateX(-50%) translateY(-120px);
+  top: auto;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%) translateY(120px);
   background: rgba(21,95,61,.95);
   color: #fff;
   padding: 12px 20px;
-  border-radius: 10px;
+  border-radius: 14px;
   font-size: 15px;
   z-index: 200;
   transition: transform .3s;
   max-width: 90%;
   text-align: center;
-  box-shadow: 0 4px 16px rgba(0,0,0,.15);
+  box-shadow: var(--shadow-2);
 }
 #toast.show { transform: translateX(-50%) translateY(0); }
 
 /* 结束横幅 */
 .end-banner {
   background: rgba(217,79,61,.92);
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 12px;
   text-align: center;
   font-weight: 700;
@@ -838,7 +895,7 @@ html, body {
 .net-status {
   font-size: 13px;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 10px;
   margin: 4px 0 10px;
   background: var(--surface-alt, #EDF4F0);
   color: var(--accent);
@@ -899,7 +956,7 @@ html, body {
 .net-joinroom-row .btn.btn-scan { gap: 4px; }
 .btn-scan .scan-ico { flex: 0 0 auto; display: block; }
 .net-joinroom-tip { font-size: 12px; line-height: 1.5; color: var(--text-dim); margin-top: 8px; }
-.net-joinroom-tip.warn { color: var(--danger); }
+.net-joinroom-tip.warn { color: var(--danger-text); }
 .net-joinroom-tip.ok { color: var(--ok); }
 
 /* ===== 扫码弹窗（摄像头取景 + 逐帧解码） ===== */
@@ -910,7 +967,7 @@ html, body {
   aspect-ratio: 3 / 4;
   max-height: 56vh;
   margin: 4px 0 10px;
-  border-radius: 12px;
+  border-radius: 14px;
   overflow: hidden;
   background: #101614;         /* 摄像头未出流时的底色 */
 }
@@ -946,5 +1003,5 @@ html, body {
   margin-bottom: 12px;
   min-height: 20px;
 }
-.scan-status.warn { color: var(--danger); }
+.scan-status.warn { color: var(--danger-text); }
 .scan-status.ok { color: var(--ok); }

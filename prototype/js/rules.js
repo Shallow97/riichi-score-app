@@ -7,8 +7,10 @@
  * 3. 自摸：三家各付各的，庄家付更多，由各人自行输入
  * 4. 立直：<1000 禁止；立直棒同步显示；和牌者收取供托（多响由放铳者逆时针第一个和牌者收取）；无人和牌则供托继承
  * 5. 流局：仅房主可点，分荒牌/其他；荒牌勾选听牌者，未听罚符总转移（三人2000/四人3000，听者平分收、未听者平分付），庄家听牌连庄否则换庄；其他流局无分换庄；流局立直者一律不收回棒（并入供托）
- * 6. 连庄/换庄：收分对象含庄家→连庄（本场+1），否则换庄；多响含庄家则连庄
+ * 6. 连庄/换庄：收分对象含庄家→连庄（本场+1），否则换庄；多响含庄家则连庄；最后一局庄家和牌且非全场最高分（并列最高也算非最高）→ 连庄继续（见 7）
  * 7. 半庄结束：a)本局结束有人<0击飞即结束 b)西入时南场最后局（四人南四/三人南三）无人击飞且最高分<阈值进西场（三人40000/四人30000），任一局有人≥阈值结束或西场最后局（四人西四/三人西三）结束 c)不开西入南场最后局无人击飞则南场最后局结束；0分不击飞。每场局数：四人4局、三人3局（轮转顺序三人为 东1-3→南1-3→西1-3，无北家故无第4局）
+ *    最后一局连庄例外（用户口径 2026-09-28）：南场/西场最后局庄家和牌（含多响含庄）时——
+ *    庄家结算后分数不是全场最高（与其他玩家并列最高也算"不是最高"）→ 不终局、连庄（局号不变、本场+1），该判定优先级高于西入"最高分≥阈值即结束"；庄家严格独占最高 → 照常结束。
  * 8. 分数校验强度1：本局增减总和不为0提示差额，允许房主强行推进
  * 9. 撤回：仅房主，可连续回退多局，整体回退
  * 10. 手动修正：仅房主，直接改某玩家分数，计入流水与校验
@@ -172,8 +174,8 @@ const Rules = (() => {
       return { ok: true, msg: '本局结算完成，触发击飞，半庄结束', endReason: game.endReason };
     }
 
-    // 6) 判定半庄结束（南四或西入）
-    const endInfo = checkRoundEnd(game);
+    // 6) 判定半庄结束（南四或西入）；最后一局庄家和牌的连庄例外在 checkRoundEnd 内判定
+    const endInfo = checkRoundEnd(game, result);
     if (endInfo) {
       finishGame(game, endInfo.reason);
       return { ok: true, msg: '本局结算完成，半庄结束', endReason: game.endReason };
@@ -184,13 +186,37 @@ const Rules = (() => {
     return { ok: true, msg: '本局结算完成，进入下一局' };
   }
 
-  /** 根据击飞之外的规则判断是否应结束半庄（此时尚未推进） */
-  function checkRoundEnd(game) {
+  /**
+   * 根据击飞之外的规则判断是否应结束半庄（此时尚未推进）
+   * @param {object} game
+   * @param {object} [result] 本局结果（用于"最后一局庄家和牌→连庄例外"判定）
+   */
+  function checkRoundEnd(game, result) {
     const r = game.round;
     // 西入结束阈值：三人模式 40000，四人模式 30000
     const westThreshold = (game.mode === 3) ? 40000 : 30000;
     // 每个场的局数（三人3局/四人4局）——最后局判定
     const perWind = roundsPerWind(game);
+    // 最后一局：南场最后局（四人南四/三人南三）或西场最后局（四人西四/三人西三）
+    const isLastRound = (r.wind === '南' || r.wind === '西') && r.num === perWind;
+
+    // ---- 最后一局庄家和牌的连庄例外（用户口径）----
+    // 庄家和牌（多响时任一赢家含庄家）且结算后分数不是全场最高
+    // （与其他玩家并列最高也算"不是最高"，即只有严格独占最高才终局）
+    // → 不终局、连庄。该判定优先级高于西入"最高分≥阈值即结束"。
+    // 庄家唯一最高时不拦截，落入下方正常结束判定。
+    if (isLastRound && result && (result.type === 'ron' || result.type === 'tsumo')) {
+      const dealerPlayer = dealer(game);
+      if ((result.winners || []).includes(dealerPlayer.name)) {
+        const maxOthers = Math.max(...game.players
+          .filter((p) => p !== dealerPlayer)
+          .map((p) => p.points));
+        if (dealerPlayer.points <= maxOthers) {
+          return null; // 连庄：advanceRound 会保持庄家/局号并 +1 本场
+        }
+      }
+    }
+
     // 南场最后局（四人：南四；三人：南三）——西入判定点
     if (r.wind === '南' && r.num === perWind) {
       // 不开西入 → 南场最后局结束

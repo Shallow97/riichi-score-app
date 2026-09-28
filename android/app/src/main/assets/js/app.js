@@ -597,7 +597,6 @@
     'modal-settle-more',     // 结算：是否还有和牌者
     'modal-tsumo',           // 自摸：选自摸者
     'modal-tsumo-amounts',   // 自摸：输入应付额
-    'modal-tsumo-review',    // 自摸：明细核对
   ]);
 
   function openModal(id) {
@@ -1242,7 +1241,7 @@
 
   /** 从「和牌结算-填写应付分数」唤起番符表；和牌者 = 本笔收分对象 */
   function openCalcForSettle() {
-    if (!settleReceiver) { toast('请先选择收分对象（和牌者）'); return; }
+    if (!settleReceiver) { toast('请先选择和牌者'); return; }
     openCalcLinked(isDealerByName(settleReceiver.name) ? 'oya' : 'ko',
       settleReceiver.name, settleReceiver.wind, 'ron');
   }
@@ -1421,10 +1420,9 @@
     });
   }
 
-  // ---- 自摸流程：选自摸者 → 输入应付额 → 明细核对 → 入账 ----
+  // ---- 自摸流程：选自摸者 → 输入应付额 → 确认结算 ----
   // 简化后不再逐家手填：程序根据"自摸者是否庄家"决定每家应付额来自哪个输入框并自动复制到各家。
   let tsumoPlayer = null;    // 自摸者（和牌者，收分人）
-  let tsumoDraft = null;     // 本次自摸的明细草案 { rows:[{name,wind,amt,role}], recvName }，入账前供核对
 
   /** 当前庄家名（用于判断自摸者是否庄家） */
   function dealerName() {
@@ -1445,7 +1443,6 @@
       div.innerHTML = `<div class="wind">${p.wind}</div><div class="name">${escapeHtml(p.name)}</div>`;
       div.addEventListener('click', () => {
         tsumoPlayer = p;
-        tsumoDraft = null;
         renderTsumoAmounts(p);
         openModal('modal-tsumo-amounts');
         closeModal('modal-tsumo');
@@ -1527,48 +1524,15 @@
     return { rows, recvName: tsumoPlayer.name, totalRecv };
   }
 
-  /** 渲染明细核对层 */
-  function renderTsumoReview(draft) {
-    $('#tsumo-review-title').textContent = '自摸者：' + tsumoPlayer.name + '（各家应付，不含本场加算）';
-    const cont = $('#tsumo-review-list');
-    cont.innerHTML = '';
-    draft.rows.forEach((r) => {
-      const div = document.createElement('div');
-      div.className = 'list-item';
-      div.innerHTML = `
-        <div class="players">${r.wind ? '<b>' + r.wind + '</b> ' : ''}${escapeHtml(r.name)}
-          <span class="lbl" style="color:#888">(${r.role})</span></div>
-        <div style="color:#D94F3D">付 ${r.amt} 点</div>`;
-      cont.appendChild(div);
-    });
-    $('#tsumo-review-total').textContent = '自摸者共收 ' + draft.totalRecv + ' 点（本场加算将在入账时自动追加）';
-  }
-
   function bindTsumoConfirm() {
     // 「点数计算（番符表）」：打开番符表并按本笔自摸者锁定座位，关闭后按闲/庄分类回填应付额
     $('#btn-tsumo-calc').addEventListener('click', openCalcForTsumo);
-    // 「下一步：核对明细」：读输入层 → 组装明细草案 → 展示核对
+    // 「确认结算」：读输入层 → 组装各笔转移 → 直接入账（不再经过核对明细弹窗）
     $('#btn-tsumo-confirm').addEventListener('click', () => {
       if (!tsumoPlayer) return;
       const draft = collectTsumoDraft();
       if (!draft) { toast('请填写应付额（至少一家需大于 0）'); return; }
-      tsumoDraft = draft;
-      renderTsumoReview(draft);
-      closeModal('modal-tsumo-amounts');
-      openModal('modal-tsumo-review');
-    });
-  }
-
-  function bindTsumoReview() {
-    // 「返回修改」：回到输入层，保留已填值供微调
-    $('#btn-tsumo-review-back').addEventListener('click', () => {
-      closeModal('modal-tsumo-review');
-      openModal('modal-tsumo-amounts');
-    });
-    // 「确认入账」：用草案生成 settleQueue 各笔并结算
-    $('#btn-tsumo-review-confirm').addEventListener('click', () => {
-      if (!tsumoDraft || !tsumoPlayer) return;
-      tsumoDraft.rows.forEach((r) => {
+      draft.rows.forEach((r) => {
         settleQueue.push({
           transfers: [
             { player: r.name, delta: -r.amt },
@@ -1578,8 +1542,7 @@
           payerName: r.name,
         });
       });
-      tsumoDraft = null;
-      closeModal('modal-tsumo-review');
+      closeModal('modal-tsumo-amounts');
       finalizeSettlement();
     });
   }
@@ -1620,8 +1583,8 @@
     // 是否处于多响后续笔（settleQueue 已含同一放铳者的前序笔）
     const isMultiMore = settleQueue.length > 0 && settleQueue.some((q) => q.payerName === payerName);
     $('#recv-hint').textContent = isMultiMore
-      ? `放铳者【${payerName}】本局还向哪位和牌者付分？（已收分者不再列出）`
-      : payerName + ' 本局给谁付分（收分对象=和牌者）？';
+      ? `放铳者【${payerName}】本局还向哪位和牌者付分？`
+      : payerName + ' 本局给谁付分？';
     let any = false;
     game.players.forEach((p) => {
       if (p.name === payerName) return;    // 不能收自己的分（付分人 ≠ 和牌者）
@@ -2277,7 +2240,6 @@
     bindSettleAmount();
     bindSettleMore();
     bindTsumoConfirm();
-    bindTsumoReview();
     bindFlow();
     bindFlowKoei();
     bindAdjustAmount();

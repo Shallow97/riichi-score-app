@@ -16,7 +16,7 @@
   判断 APK 是否"内容正确"要**比条目**，不是比总字节：`unzip -v <apk> | awk 'NF>=8 && $8!="Name"'` 归一化后 diff；或直接比对内嵌资源哈希。
   **交付用 clean 出来的包**（更小、无累积打包开销）；用户若问"为什么体积变了"，先做条目 diff 再回答。
 - **装完 APK 的验证链**（一条命令串起来，adb server 会被回收）：`install -r` → `dumpsys package com.riichi.score | grep lastUpdateTime`（确认是刚装的）→ `monkey -p com.riichi.score -c android.intent.category.LAUNCHER 1` + `pidof`（确认不闪退）→ 技能脚本 `cdp-eval.js` 直查真机 DOM（元素/`getComputedStyle` 是否为新版）
-- 测试：`cd prototype/tests && NODE_PATH="C:/Users/Administrator/.workbuddy/binaries/node/workspace/node_modules" "C:/Users/Administrator/.workbuddy/binaries/node/versions/22.22.2-2/node.exe" <脚本>.js`
+- 测试：`cd prototype/tests && NODE_PATH="C:/Users/Administrator/.workbuddy/binaries/node/workspace/node_modules" "C:/Users/Administrator/.workbuddy/binaries/node/versions/22.22.2-3/node.exe" <脚本>.js`
   ⚠️ **跑测试前确认 8765 没被 serve.js 占用**：否则 net.js 连上 `ws://127.0.0.1:8765/ws`，重连定时器让 node 跑完不退出（`timeout` 返 124），易误判为定时器泄漏
 - **真机 CDP**：APP 已开 `setWebContentsDebuggingEnabled`。`adb shell cat /proc/net/unix | grep -o "@webview_devtools_remote_[0-9]*"` → `adb forward tcp:9222 localabstract:<sock>` → node+`ws`(`prototype/node_modules`) 发 `Runtime.evaluate`
   ⚠️ adb 每条命令后 server 被回收 → forward 失效：**socket/forward/CDP 必须写在同一条 Bash 命令**
@@ -51,6 +51,7 @@
 - 守恒：场上总分 = 玩家分和 + 供托池（四人 100000 / 三人 105000）
 - 本场费：荣和一人付 `300N`；自摸每家付 `100N`（三人缺北自摸损：收 200N、2 家各付 100N）
 - 本场推进：仅闲家和牌归零，流局或庄家和 +1（`advanceRound` 用 `isFlow` 解耦）
+- **最后一局连庄例外（2026-09-28 用户定）**：南场/西场最后局庄家和牌（多响含庄算），结算后庄家分数**不是全场最高（平分也算不是最高，仅独占最高才终局）** → 不终局、连庄（局号不变、本场+1），**优先级高于西入"≥阈值即结束"**。实现：`checkRoundEnd(game, result)` 开头拦截，`dealer.points <= maxOthers` 返 null；终局后 `applyRoundResult` step6 直接 return，不再推进庄家/局号。测试 `dealer-win-continue-test.js`
 - 荒牌流局未听罚符：总转移固定 **三人 2000 / 四人 3000**（听者平分收、未听平分付），勿写成 ×人数；`notenBappuTotal()` 驱动三处文案
 - 多响：供托与本场加算归「放铳者逆时针第一个赢家」`pickKyotakuReceiver`
 - 逐局 delta：立直 -1000 记在立直局、供托 +N×1000 记在收走局（跨局相加+池中余额=0）；`delta=结算后分−快照分−(本局立直?1000:0)`，**必须在 applyRoundResult 第 4 步清立直状态前读 `p.riichi`**；老记录无该字段则原样显示
@@ -58,17 +59,18 @@
 ## 其它模块
 - 手动修正（均 pushSnapshot 可撤）：`adjustRound`（含 `dealerIndexForRound` 反推庄家）、`adjustKyotaku`、`setHonba`
 - 操作权：服务器把 host 当普通 ClientConn；net.js `iAmOperator` 恒 false，联网统一 request-action；`OP_MODALS` 全关 → 微任务 releaseAction
-- 自摸：填单位应付额程序复制（`.tsumo-koha`/`.tsumo-oya`，三人缺北 koha 只 1 闲），两段式 amounts→review
+- 自摸：填单位应付额程序复制（`.tsumo-koha`/`.tsumo-oya`，三人缺北 koha 只 1 闲），**单段式**（2026-09-28 用户定）：填额弹窗「确认结算」直接入账，核对明细弹窗已删除（`#modal-tsumo-review` 不存在，勿引用）
 - `Rules.calcScore(han, fu, seat, playerCount=4)`：番 1~4 `base=fu*2^(han+2)`，≥2000 封满贯，**不开切上满贯**。返回 `ron` / `tsumoKo`(每位闲家应付) / `tsumoOya`(庄家应付，亲自摸为 null) / `tsumo`(总额) / `tsumoNote`。
   ⚠️ **回填一律用 `tsumoKo`/`tsumoOya` 分类值，勿用 `tsumo` 总额**；`tsumo` 按第 4 参人数折（三缺北"缺的那家"那份不取 → 闲自摸 ko×1+oya、庄自摸 ko×2），不传参默认四人（向后兼容）。app.js 的 `updateCalc`/`onCalcClosed` 都传 `game.players.length`
 - ⚠️ **结算有两条互不相干的弹窗链**（加功能必须两条都改，只改一条 = 界面上"按钮不存在"）：
-  - 荣和：`modal-settle-type`→`pay`→`recv`→`amount`（单值 `#settle-amount`，放铳者付）
-  - 自摸：`modal-tsumo`(选自摸者)→`tsumo-amounts`(分类填额)→`tsumo-review`(核对入账)
+  - 荣和：`modal-settle-type`→`pay`→`recv`→`amount`（单值 `#settle-amount`，放铳者付，`#btn-settle-confirm` 文案=「确认结算」）
+  - 自摸：`modal-tsumo`(选自摸者)→`tsumo-amounts`(分类填额，`#btn-tsumo-confirm` 文案=「确认结算」→直接 finalizeSettlement)
 - **番符表联动**（2026-09-27）：`#btn-settle-calc` / `#btn-tsumo-calc` → `openCalcLinked(seat,name,wind,mode)` → 打开 `#modal-calc`；座位按 `isDealerByName(和牌者)` 锁 oya/ko，`calcLink={seat,receiverName,mode:'ron'|'tsumo'}` 非空即锁定，关闭时 `onCalcClosed()` 按 mode 回填（ron→`#settle-amount`；tsumo→`.tsumo-shared` 或 `.tsumo-koha`+`.tsumo-oya`）。⚠️ 番符表**叠层不切换**（`modal-calc` 不在 `OP_MODALS`，切换会误释放操作权）；⚠️ `#modal-calc` 需 `z-index:150`（两个填额弹窗 DOM 都比它靠后，同为 100 会压住它）；座位身份用 `isDealerByName` 推导，勿读 `wind`（连庄/局数旋转下 wind 会变）
 - `prototype/tools/shot-{settle,tsumo}-calc.js`：真 Chrome CDP 393×852 截图骨架，改别的界面时复制后替换中间 `ev(...)` 步骤
 - view-lock 只改渲染 class；`bindAll` 有 `__appBound` 幂等守卫
 
 ## UI 约束
-- 面向固定窄屏 ~393px（无 `@media`）；index.html 4 `.page`（mode/setup/main/history）+ **27** 个 `#modal-*`
+- 面向固定窄屏 ~393px（无 `@media`）；index.html 4 `.page`（mode/setup/main/history）+ **26** 个 `#modal-*`（tsumo-review 已删）
 - ⚠️ 改版真正成本是 tests/ 上千处 DOM 断言（唯 `view-lock-test.js` 读 style.css 的 `.modal-view .view-actions .btn`）→ 不改 class 名/HTML 结构则全绿
-- 视觉稿/三方案在 `design-preview/`
+- 视觉稿/三方案在 `design-preview/`；现状截图在 `design-preview/audit/`
+- **外观体系（2026-09-28 落地，用户批准①②③⑤+④无徽标）**：圆角 3 档 10/14/20px；阴影 `--shadow-1`(小件)/`--shadow-2`(弹窗悬浮) 两档；字重最多 700（800/900 已清除）；`--text-dim #5F6E76`、`--gold #8F6B12`、`--danger-text #C13E2E`（危险**小字**用，负分大数字仍 `--danger #D94F3D`）；按钮一套语言=描边环+轻投影（厚底拟物已删，按压 scale(.98)）；`#toast` 在**底部**（曾压北家）；弹窗有 overlayIn/modalIn 入场动画；close-x 44px 热区、seat-chip min-height 44；座位卡 pts 22px tabular-nums 为第一焦点、wind 14px、局号 16px。**东风位即庄家（用户定），不加庄家徽标**。夜间主题（暗色变量套）已批方向未实现，放 token 之后再做

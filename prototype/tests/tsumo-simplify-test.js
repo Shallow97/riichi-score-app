@@ -1,7 +1,7 @@
 /**
  * tsumo-simplify-test.js — 自摸结算简化流程专项测试
  * 覆盖：自摸者=庄家(单输入自动复制到各闲家) / 自摸者=闲家(子+亲两值自动分配)
- *       明细核对 / 核对时取消不入账 / 入账后各家分数正确
+ *       取消不入账（×关闭填额弹窗）/ 「确认结算」直接入账（无核对明细步骤）后各家分数正确
  * 运行：NODE_PATH=<workspace>/node_modules node tsumo-simplify-test.js
  */
 const { JSDOM } = require('jsdom');
@@ -54,32 +54,20 @@ async function main() {
   assert(document.querySelectorAll('.tsumo-koha').length === 0 && document.querySelectorAll('.tsumo-oya').length === 0,
     '庄家自摸不出现闲家/庄家双输入框');
   document.querySelector('.tsumo-shared').value = '1000';
-  document.getElementById('btn-tsumo-confirm').click();
-  assert(document.getElementById('modal-tsumo-review').classList.contains('show'), '点"下一步"进入明细核对弹窗');
-
-  // 明细核对：应列出 3 个闲家各付 1000
-  const reviewA = document.getElementById('tsumo-review-list').textContent;
-  const cntA = (reviewA.match(/付 1000 点/g) || []).length;
-  assert(cntA === 3, '庄家自摸明细列出3家闲家各付1000（自动复制），实得 ' + cntA);
-  assert(document.getElementById('tsumo-review-total').textContent.includes('共收 3000'),
-    '明细合计显示自摸者共收3000');
-
-  // 取消入账：点 × 关闭，分数应不变、不出现 result
-  document.getElementById('modal-tsumo-review').querySelector('.close-x').click();
-  assert(document.getElementById('modal-tsumo-review').classList.contains('show') === false, '核对弹窗可点×关闭');
+  // 取消：点 × 关闭填额弹窗，不入账
+  document.getElementById('modal-tsumo-amounts').querySelector('.close-x').click();
   assert(document.getElementById('modal-result').classList.contains('show') === false, '取消后不进入结算结果');
   const midA = readPts(document);
-  assert(JSON.stringify(preA) === JSON.stringify(midA), '取消入账后各家分数不变');
+  assert(JSON.stringify(preA) === JSON.stringify(midA), '取消后各家分数不变');
 
-  // 重新走一遍并确认入账
+  // 重新走一遍并点「确认结算」直接入账（核对明细步骤已移除）
   document.getElementById('btn-tsumo-ron').click();
   document.getElementById('btn-settle-tsumo').click();
   Array.from(document.querySelectorAll('#tsumo-pick .p')).find((p) => p.textContent.includes('P东')).click();
   document.querySelector('.tsumo-shared').value = '1000';
   document.getElementById('btn-tsumo-confirm').click();
-  document.getElementById('btn-tsumo-review-confirm').click();
-  assert(document.getElementById('modal-tsumo-review').classList.contains('show') === false, '确认入账后明细弹窗关闭');
-  assert(document.getElementById('modal-result').classList.contains('show'), '入账后进入结算结果弹窗');
+  assert(document.getElementById('modal-tsumo-review') === null, '核对明细弹窗已从DOM移除');
+  assert(document.getElementById('modal-result').classList.contains('show'), '点"确认结算"直接进入结算结果弹窗');
   const postA = readPts(document);
   assert(postA['P东'] - midA['P东'] === 3000, '庄家自摸者P东收3闲家各1000 → +3000，实得 ' + (postA['P东']-midA['P东']));
   ['P南', 'P西', 'P北'].forEach((w) => {
@@ -112,16 +100,7 @@ async function main() {
   kohaEl.value = '1000';
   oyaEl.value = '2000';
   document.getElementById('btn-tsumo-confirm').click();
-  assert(document.getElementById('modal-tsumo-review').classList.contains('show'), '闲家自摸点下一步进入明细核对');
-
-  const reviewB = document.getElementById('tsumo-review-list').textContent;
-  assert((reviewB.match(/付 1000 点/g) || []).length === 2, '明细含2个闲家(西、北)各付1000');
-  assert((reviewB.match(/付 2000 点/g) || []).length === 1, '明细含1个庄家(东)付2000');
-  assert(document.getElementById('tsumo-review-total').textContent.includes('共收 4000'),
-    '明细合计显示自摸者共收4000(1000+1000+2000)');
-
-  document.getElementById('btn-tsumo-review-confirm').click();
-  assert(document.getElementById('modal-result').classList.contains('show'), '闲家自摸入账后进入结算结果');
+  assert(document.getElementById('modal-result').classList.contains('show'), '闲家自摸点"确认结算"直接进入结算结果');
   const postB = readPts(document);
   assert(postB['P南'] - preB['P南'] === 4000, '闲家自摸者P南收1000+1000+2000=4000，实得 ' + (postB['P南']-preB['P南']));
   assert(postB['P东'] - preB['P东'] === -2000, '庄家P东付亲额2000，实得 ' + (postB['P东']-preB['P东']));
@@ -151,13 +130,7 @@ async function main() {
   document.querySelector('.tsumo-oya').value = '2000';
   kohaC.value = '1000';
   document.getElementById('btn-tsumo-confirm').click();
-  assert(document.getElementById('modal-tsumo-review').classList.contains('show'), '三人闲家自摸进入明细核对');
-  const reviewC = document.getElementById('tsumo-review-list').textContent;
-  assert((reviewC.match(/付 1000 点/g) || []).length === 1, '明细仅1个闲家(西)付1000');
-  assert((reviewC.match(/付 2000 点/g) || []).length === 1, '明细含1个庄家(东)付2000');
-  assert(document.getElementById('tsumo-review-total').textContent.includes('共收 3000'),
-    '明细合计自摸者共收3000(缺北自摸损：仅1000+2000)');
-  document.getElementById('btn-tsumo-review-confirm').click();
+  assert(document.getElementById('modal-result').classList.contains('show'), '三人闲家自摸点"确认结算"直接进入结算结果');
   const postC = readPts(document);
   assert(postC['P南'] - preC['P南'] === 3000, '三人闲家自摸P南收1000+2000=3000(自摸损收更少)，实得 ' + (postC['P南']-preC['P南']));
   assert(postC['P东'] - preC['P东'] === -2000, '三人庄家P东付亲额2000，实得 ' + (postC['P东']-preC['P东']));

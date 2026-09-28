@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>日麻计分 · 外观优化方向预览</title>
+<style>
+  :root{
+    --ink:#27343D; --dim-cur:#8A979E; --dim-new:#5F6E76;
+    --accent:#1E7A4E; --gold-cur:#C9992E; --gold-new:#8F6B12;
+    --red-cur:#D94F3D; --red-new:#C13E2E;
+    --line:#E3E8E6; --bg:#F4F6F4; --card:#fff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{font-family:"PingFang SC","Microsoft YaHei","Helvetica Neue",Arial,sans-serif;background:var(--bg);color:var(--ink);padding:28px 18px 80px;max-width:980px;margin:0 auto;line-height:1.6}
+  h1{font-size:24px;color:var(--accent);letter-spacing:1px;margin-bottom:4px}
+  .sub{color:var(--dim-new);font-size:13px;margin-bottom:26px}
+  h2{font-size:19px;color:var(--accent);margin:44px 0 6px;padding-top:18px;border-top:1px solid var(--line)}
+  h2:first-of-type{border-top:none;margin-top:10px}
+  .desc{font-size:14px;color:var(--ink);margin-bottom:14px}
+  .desc b{color:var(--accent)}
+  .cols{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;flex:1;min-width:280px}
+  .panel h4{font-size:13px;margin-bottom:10px;font-weight:700}
+  .tag-cur{color:var(--dim-new)} .tag-new{color:var(--accent)}
+  .shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+  .shots figure{background:#fff;border:1px solid var(--line);border-radius:10px;padding:6px}
+  .shots img{width:100%;display:block;border-radius:6px}
+  .shots figcaption{font-size:11px;color:var(--dim-new);text-align:center;padding:4px 0 2px}
+  table{width:100%;border-collapse:collapse;font-size:13px;background:#fff}
+  th,td{border:1px solid var(--line);padding:6px 10px;text-align:left}
+  th{background:#EDF4F0;color:var(--accent);font-weight:700}
+  td b{font-variant-numeric:tabular-nums}
+  .pass{color:#1E7A4E;font-weight:700}.fail{color:var(--red-new);font-weight:700}
+  /* --- 圆角/阴影 token demo --- */
+  .demo-row{display:flex;gap:10px;flex-wrap:wrap}
+  .chip{width:92px;height:64px;background:#fff;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--dim-new);text-align:center;padding:4px}
+  /* --- 按钮对比 --- */
+  .btn{display:block;width:100%;padding:13px;border:none;border-radius:12px;font-size:15px;font-weight:600;background:#fff;color:var(--accent);cursor:pointer;text-align:center}
+  .btn.primary{background:var(--accent);color:#fff}
+  .b-cur{border-bottom:4px solid #C4D0CA}
+  .b-cur.primary{border-bottom-color:#155F3D}
+  .b-new{border-bottom:none;box-shadow:0 1px 3px rgba(28,43,36,.10),0 0 0 1px var(--line)}
+  .b-new.primary{box-shadow:0 2px 6px rgba(30,122,78,.28)}
+  .b-new:active{transform:scale(.98)}
+  .b-cur:active{transform:translateY(2px)}
+  .btn+.btn{margin-top:8px}
+  /* --- 对比度色块 --- */
+  .swatches{display:flex;flex-direction:column;gap:8px}
+  .sw{display:flex;align-items:center;gap:10px;font-size:13px}
+  .sw .box{width:120px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+  .sw small{color:var(--dim-new)}
+  /* --- 桌面座位卡对比 --- */
+  .mini-table{background:radial-gradient(circle at 50% 50%,#fff 0%,#E6F0EA 55%,#CDE0D4 100%);border:3px solid #C4D5CA;border-radius:14px;position:relative;height:210px;overflow:hidden}
+  .seat{position:absolute;width:88px;background:#fff;border:1px solid #C4D0CA;border-radius:10px;padding:6px 4px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+  .seat .wind{font-size:16px;font-weight:800;color:#D94F3D}
+  .seat .name{font-size:11px;color:var(--ink);margin:1px 0}
+  .seat .pts{font-size:17px;font-weight:800;color:#1C2B24}
+  .seat-new{border:1px solid var(--line);box-shadow:0 1px 3px rgba(28,43,36,.08)}
+  .seat-new .wind{font-size:13px;font-weight:700}
+  .seat-new .pts{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.3px}
+  .seat-new .dealer{display:inline-block;font-size:9px;background:var(--gold-new);color:#fff;border-radius:5px;padding:0 4px;margin-left:3px;vertical-align:1px}
+  .center{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#fff;border:2px solid rgba(30,122,78,.5);border-radius:12px;padding:8px 14px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+  .center .round{font-size:20px;font-weight:800;color:var(--accent)}
+  .center .sub2{font-size:10px;color:var(--dim-cur);margin-top:1px}
+  .center-new{border:1px solid var(--line);box-shadow:0 1px 4px rgba(28,43,36,.10)}
+  .center-new .round{font-size:15px;font-weight:700;color:var(--accent)}
+  .center-new .sub2{font-size:10px;color:var(--dim-new)}
+  /* --- 触控热区 --- */
+  .hotzone{position:relative;width:44px;height:44px;display:flex;align-items:center;justify-content:center}
+  .hotzone .x{font-size:20px;color:var(--dim-cur)}
+  .hotzone.new .x{font-size:18px;color:var(--dim-new)}
+  .hz-show{outline:1px dashed var(--red-new);outline-offset:-1px}
+  /* --- 动效 demo --- */
+  .fx-demo{margin-top:10px}
+  .fx-btn{padding:10px 18px;border-radius:10px;border:1px solid #C4D0CA;background:#fff;color:var(--accent);font-size:14px;font-weight:600;cursor:pointer;margin-right:8px}
+  .fx-stage{position:relative;height:150px;margin-top:12px;background:var(--bg);border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+  .fx-modal{position:absolute;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center}
+  .fx-modal.show{display:flex}
+  .fx-card{background:#fff;border-radius:14px;padding:18px 22px;width:210px;text-align:center}
+  .fx-card h5{color:var(--accent);font-size:14px;margin-bottom:8px}
+  .fx-card p{font-size:12px;color:var(--dim-new)}
+  .fx-anim .fx-card{animation:pop .18s ease-out}
+  @keyframes pop{from{opacity:0;transform:scale(.92) translateY(8px)}to{opacity:1;transform:none}}
+  .note{font-size:12.5px;color:var(--dim-new);background:#EDF4F0;border-radius:8px;padding:10px 14px;margin-top:14px}
+  .note b{color:var(--accent)}
+  code{background:#EDF4F0;border-radius:4px;padding:1px 6px;font-size:12px;color:var(--accent)}
+</style>
+</head>
+<body>
+
+<h1>日麻计分 · 外观优化方向预览</h1>
+<div class="sub">基于真机尺寸 393×852 真 Chrome 渲染截图 + style.css 全量走查 · 2026-09-28 · 只做方向预览，未改任何生产文件</div>
+
+<h2>0 · 现状截图（审查基准）</h2>
+<div class="shots">
+  <figure><img src="audit/audit-1-mode.png" alt="模式选择"><figcaption>模式选择页：下方留白大</figcaption></figure>
+  <figure><img src="audit/audit-2-main.png" alt="对局主界面"><figcaption>对局主界面：toast 压住北家</figcaption></figure>
+  <figure><img src="audit/audit-3-modal.png" alt="弹窗"><figcaption>立直选人弹窗：硬切出现</figcaption></figure>
+  <figure><img src="audit/audit-4-history.png" alt="历史"><figcaption>历史页（空态）</figcaption></figure>
+</div>
+
+<h2>① 设计 Token 收敛：圆角 / 阴影 / 字重</h2>
+<p class="desc">现状 style.css 里圆角出现了 <b>7 种取值</b>（8/10/12/14/16/18/20px），阴影 <b>5 种写法</b>，字重大量 700/800/900 混用——同一屏里「重要」的东西太多，等于没有重点。建议收敛为三档 token，只改变量值，所有组件自动跟随：</p>
+<div class="cols">
+  <div class="panel">
+    <h4 class="tag-cur">现状（示意）</h4>
+    <div class="demo-row">
+      <div class="chip" style="border-radius:8px">8px<br>help-tab</div>
+      <div class="chip" style="border-radius:10px">10px<br>input</div>
+      <div class="chip" style="border-radius:12px">12px<br>btn</div>
+      <div class="chip" style="border-radius:14px">14px<br>card</div>
+    </div>
+    <div class="demo-row" style="margin-top:8px">
+      <div class="chip" style="border-radius:16px">16px<br>mode-card</div>
+      <div class="chip" style="border-radius:18px">18px<br>die</div>
+      <div class="chip" style="border-radius:20px">20px<br>table</div>
+      <div class="chip" style="border-radius:16px">…</div>
+    </div>
+  </div>
+  <div class="panel">
+    <h4 class="tag-new">建议：三档圆角 + 两档阴影</h4>
+    <div class="demo-row">
+      <div class="chip" style="border-radius:10px">sm 10px<br>输入框/小件</div>
+      <div class="chip" style="border-radius:14px">md 14px<br>卡片/按钮</div>
+      <div class="chip" style="border-radius:20px">lg 20px<br>桌面/弹窗</div>
+    </div>
+    <div class="demo-row" style="margin-top:8px">
+      <div class="chip" style="border-radius:14px;box-shadow:0 1px 3px rgba(28,43,36,.10)">shadow-1<br>座位/小卡</div>
+      <div class="chip" style="border-radius:14px;box-shadow:0 4px 14px rgba(28,43,36,.14)">shadow-2<br>弹窗/悬浮</div>
+      <div class="chip" style="border-radius:14px;box-shadow:0 0 0 1px var(--line)">描边<br>代替阴影</div>
+    </div>
+  </div>
+</div>
+<div class="note">字重阶梯建议 <b>600（正文强调）/ 700（标题）/ 750→700+字号（大数字）</b>，去掉 800/900。PingFang 在 Android WebView 实际回落到 MiSans，800+ 会明显发糊发闷；「重点」改用<b>字号差和颜色</b>表达，比加粗更干净。</div>
+
+<h2>② 可读性：弱化色与金/红对比度不达标</h2>
+<p class="desc">WCAG AA 要求正文 ≥ 4.5:1。实测（脚本计算，非目测）：</p>
+<table>
+  <tr><th>用色</th><th>现状值</th><th>对比度</th><th>建议值</th><th>对比度</th></tr>
+  <tr><td>弱化文字 <code>--text-dim</code>（meta/hint/状态，12–13px）</td><td>#8A979E</td><td class="fail">3.00 ✗</td><td>#5F6E76</td><td class="pass">5.28 ✓</td></tr>
+  <tr><td>金色 <code>--gold</code>（neg2 负分/供托强调）</td><td>#C9992E</td><td class="fail">2.60 ✗</td><td>#8F6B12</td><td class="pass">4.91 ✓</td></tr>
+  <tr><td>危险红小字（notice.warn 文字）</td><td>#D94F3D</td><td class="fail">4.09 ✗</td><td>#C13E2E</td><td class="pass">5.26 ✓</td></tr>
+  <tr><td>品牌绿（标题/按钮，大字号）</td><td>#1E7A4E</td><td class="pass">5.32 ✓</td><td>保持</td><td class="pass">—</td></tr>
+</table>
+<div class="cols" style="margin-top:14px">
+  <div class="panel">
+    <h4 class="tag-cur">现状文字色</h4>
+    <div class="swatches">
+      <div class="sw"><span class="box" style="background:#fff;color:#8A979E;border:1px solid var(--line)">弱化文字 3.0</span><small>单机模式·房主可操作… 这行小字基本靠猜</small></div>
+      <div class="sw"><span class="box" style="background:#fff;color:#C9992E;border:1px solid var(--line)">金色负分 2.6</span><small>超出点棒的负分几乎看不见</small></div>
+    </div>
+  </div>
+  <div class="panel">
+    <h4 class="tag-new">建议文字色</h4>
+    <div class="swatches">
+      <div class="sw"><span class="box" style="background:#fff;color:#5F6E76;border:1px solid var(--line)">弱化文字 5.3</span><small>小字也能稳读，视觉重量几乎不变</small></div>
+      <div class="sw"><span class="box" style="background:#fff;color:#8F6B12;border:1px solid var(--line)">金色负分 4.9</span><small>仍偏「金」，但读得清了</small></div>
+    </div>
+  </div>
+</div>
+<div class="note">负分大数字（座位卡 <code>.pts.neg</code>，20px 粗体，属「大文字 ≥3:1」）可保持 #D94F3D；只把<b>小字号</b>场景换深色值。改法是给对应选择器换变量值，DOM 不动。</div>
+
+<h2>③ 触控目标：关闭按钮与座位 chip 热区偏小</h2>
+<p class="desc">推荐最小触控目标 44×44px。现状 <code>.close-x</code> 是 22px 的裸「×」float 右侧，热区只有 22×22；<code>.seat-chip</code> 高约 28px。纯 CSS 用 <code>::before</code> 扩热区 / 加 padding 修复，视觉不变：</p>
+<div class="cols">
+  <div class="panel">
+    <h4 class="tag-cur">现状：×实际可点区域（虚线框）</h4>
+    <div style="display:flex;justify-content:flex-end;padding:6px">
+      <span class="hz-show" style="font-size:22px;color:#8A979E;display:inline-block;width:26px;height:26px;text-align:center;line-height:26px">×</span>
+    </div>
+    <p style="font-size:12px;color:#5F6E76;text-align:right">26×26px，误触率高</p>
+  </div>
+  <div class="panel">
+    <h4 class="tag-new">建议：44×44 热区（虚线框），字形不变</h4>
+    <div style="display:flex;justify-content:flex-end;padding:6px">
+      <span class="hz-show hotzone"><span class="x">×</span></span>
+    </div>
+    <p style="font-size:12px;color:#5F6E76;text-align:right">44×44px，视觉上仍是那个 ×</p>
+  </div>
+</div>
+
+<h2>④ 桌面信息层级：分数才是主角</h2>
+<p class="desc">现状座位卡：风字 18px/800 ≈ 分数 20px/800，局号 24px/800 —— 三者权重几乎打平。计分工具里<b>玩家的分数应该是第一视觉焦点</b>。方向：分数加大 + 等宽数字，风字/局号收敛：</p>
+<div class="cols">
+  <div class="panel">
+    <h4 class="tag-cur">现状复刻</h4>
+    <div class="mini-table">
+      <div class="seat" style="left:50%;transform:translateX(-50%);top:8px"><div class="wind" style="color:#333A45">北</div><div class="name">玩家4</div><div class="pts">25000</div></div>
+      <div class="seat" style="left:6px;top:50%;transform:translateY(-50%)"><div class="wind">东</div><div class="name">玩家1</div><div class="pts">38500</div></div>
+      <div class="seat" style="right:6px;top:50%;transform:translateY(-50%)"><div class="wind" style="color:#3D6FB4">西</div><div class="name">玩家3</div><div class="pts">21500</div></div>
+      <div class="seat" style="left:50%;transform:translateX(-50%);bottom:8px"><div class="wind" style="color:#2E8B57">南</div><div class="name">我</div><div class="pts">18000</div></div>
+      <div class="center"><div class="round">东1局</div><div class="sub2">本场 0 · 供托 0 点</div></div>
+    </div>
+  </div>
+  <div class="panel">
+    <h4 class="tag-new">建议：分数 22px 等宽 / 风字缩小 / 庄家徽标</h4>
+    <div class="mini-table">
+      <div class="seat seat-new" style="left:50%;transform:translateX(-50%);top:8px"><div><span class="wind" style="color:#333A45">北</span><span class="dealer">庄</span></div><div class="name">玩家4</div><div class="pts">25000</div></div>
+      <div class="seat seat-new" style="left:6px;top:50%;transform:translateY(-50%)"><div><span class="wind">东</span><span class="dealer">庄</span></div><div class="name">玩家1</div><div class="pts">38500</div></div>
+      <div class="seat seat-new" style="right:6px;top:50%;transform:translateY(-50%)"><div><span class="wind" style="color:#3D6FB4">西</span></div><div class="name">玩家3</div><div class="pts">21500</div></div>
+      <div class="seat seat-new" style="left:50%;transform:translateX(-50%);bottom:8px"><div><span class="wind" style="color:#2E8B57">南</span></div><div class="name">我</div><div class="pts">18000</div></div>
+      <div class="center center-new"><div class="round">东1局 · 本场0</div><div class="sub2">供托 0 点</div></div>
+    </div>
+  </div>
+</div>
+<div class="note">分数加 <code>font-variant-numeric: tabular-nums</code>（番符表结果行已在用，座位卡漏了），数字跳动时不抖宽。<b>庄家徽标</b>替代「连庄时 wind 变化」的隐性信息，亲历多场实测找庄家靠数局数。</div>
+
+<h2>⑤ 按钮体系统一 + 微动效</h2>
+<p class="desc">现状主按钮是「拟物厚底」（4px 底边 + 按压位移），而 ghost / seat-chip / mode-card 是「平面描边」——两套语言同屏。建议统一为一套：<b>实心主按钮用轻投影表达可按，次按钮纯描边</b>；同时给弹窗加 180ms 出现动画（现在是 display 硬切）：</p>
+<div class="cols">
+  <div class="panel">
+    <h4 class="tag-cur">现状：厚底拟物 vs 描边 混用</h4>
+    <button class="btn b-cur primary">和牌结算（厚底）</button>
+    <button class="btn b-cur" style="border:1px solid #C4D0CA;border-bottom-width:2px">立直（描边+半厚底）</button>
+  </div>
+  <div class="panel">
+    <h4 class="tag-new">建议：投影实心 + 纯描边，一套语言</h4>
+    <button class="btn b-new primary">和牌结算</button>
+    <button class="btn b-new">立直</button>
+  </div>
+</div>
+<div class="fx-demo">
+  <button class="fx-btn" onclick="fx(true)">弹窗 · 硬切（现状）</button>
+  <button class="fx-btn" onclick="fx(false)">弹窗 · 渐入放大（建议）</button>
+  <div class="fx-stage">
+    <div class="fx-modal" id="fxm"><div class="fx-card"><h5>选择要立直的玩家</h5><p>点空白处关闭</p></div></div>
+  </div>
+</div>
+<div class="note">同场加映：<b>toast 建议从顶部移到底部</b>（现状压住北家座位卡，见第 0 节截图 2，改 <code>#toast</code> 的 top→bottom 两行）；页面加 <code>env(safe-area-inset-bottom)</code> 防全面屏手势条遮挡。</div>
+
+<h2>⑥ 远期方向：夜间主题</h2>
+<p class="desc">牌局常在晚上打，纯白桌面刺眼。design-preview 里已有的「方案C · 夜牌」稿（深底 + 亮绿 + 高对比数字）方向是对的。落地成本低：所有颜色已走 CSS 变量，补一套 <code>[data-theme=dark]</code> 变量值即可，建议放到 token 收敛之后再做。</p>
+
+<h2>落地方式与边界</h2>
+<table>
+  <tr><th>项</th><th>改哪里</th><th>tests 影响</th></tr>
+  <tr><td>Token 收敛 / 对比度 / 阴影 / 字重 / toast 位置</td><td>只改 <code>css/style.css</code> 变量值与选择器属性</td><td>无（唯 view-lock-test 读 style.css 的选择器字符串，保持选择器名不动即可）</td></tr>
+  <tr><td>触控热区</td><td><code>.close-x</code> / <code>.seat-chip</code> 纯 CSS 扩展</td><td>无</td></tr>
+  <tr><td>座位卡层级 / 庄家徽标</td><td>徽标需在 index.html 加一个 &lt;span&gt;（或 CSS ::after 由 JS 挂 class）</td><td>涉及 DOM，需跑全量测试确认</td></tr>
+  <tr><td>弹窗动效</td><td><code>.modal-overlay.show</code> 加 animation（display 切换不变）</td><td>无</td></tr>
+</table>
+<div class="note">⚠️ 约束：改版真正成本是 tests/ 上千处 DOM 断言——<b>不改 class 名与 HTML 结构的前提下，①②③⑤ 全部可安全落地</b>；改完需同步 <code>android/app/src/main/assets/</code> 重新打包。本页仅为方向预览，生产文件未动。</div>
+
+<script>
+function fx(animated){
+  var m = document.getElementById('fxm');
+  m.classList.remove('show','fx-anim');
+  void m.offsetWidth;
+  if(animated){ m.classList.add('show'); }
+  else { m.classList.add('show','fx-anim'); }
+}
+document.getElementById('fxm').addEventListener('click', function(){
+  this.classList.remove('show','fx-anim');
+});
+</script>
+</body>
+</html>

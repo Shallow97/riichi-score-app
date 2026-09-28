@@ -86,7 +86,6 @@ async function main() {
       if (oya != null) document.querySelector('.tsumo-oya').value = String(oya);
     }
     document.getElementById('btn-tsumo-confirm').click();
-    document.getElementById('btn-tsumo-review-confirm').click();
     assert(document.getElementById('modal-result').classList.contains('show'), '进入结算结果弹窗');
   }
 
