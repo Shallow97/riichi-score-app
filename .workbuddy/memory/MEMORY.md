@@ -12,6 +12,7 @@
 ## 工具链
 - JDK `D:/tools/jdk-17.0.2`（必须 export）；SDK `C:/Users/Administrator/AppData/Local/Android/Sdk`；`GRADLE_USER_HOME=D:/tools/gradle-home`；`android/` 下 `D:/tools/gradle-8.2/bin/gradle.bat assembleDebug --no-daemon` → cp 到根 `日麻计分APP-debug.apk`
 - adb 绝对路径（不在 PATH）；包名 `com.riichi.score`；`install -r` 同签名可覆盖；校验内嵌资源 `unzip -p <apk> assets/js/app.js | sha256sum`
+- ⚠️ Bash 沙箱里 `ADB=xxx && "$ADB" ...`（变量赋值+引用展开）会报 `sandbox-center cmd decisionRecord missing actual resource subject` 直接失败；可执行文件写全路径直呼即可（2026-09-29 实测）
 - ⚠️ **别拿 APK 字节数当信号**：同一套源码，增量打包与 `gradle clean assembleDebug` 出来的体积**可以差几十 KB**（实测同一内容：增量 181,973 / clean 165,804 / 更早 209,532），差异**全在非条目开销**（zip 结构 / 签名块 / 对齐填充），`unzip -v` 的条目名+原始大小+压缩大小**完全一致**。
   判断 APK 是否"内容正确"要**比条目**，不是比总字节：`unzip -v <apk> | awk 'NF>=8 && $8!="Name"'` 归一化后 diff；或直接比对内嵌资源哈希。
   **交付用 clean 出来的包**（更小、无累积打包开销）；用户若问"为什么体积变了"，先做条目 diff 再回答。
@@ -68,9 +69,10 @@
 - **番符表联动**（2026-09-27）：`#btn-settle-calc` / `#btn-tsumo-calc` → `openCalcLinked(seat,name,wind,mode)` → 打开 `#modal-calc`；座位按 `isDealerByName(和牌者)` 锁 oya/ko，`calcLink={seat,receiverName,mode:'ron'|'tsumo'}` 非空即锁定，关闭时 `onCalcClosed()` 按 mode 回填（ron→`#settle-amount`；tsumo→`.tsumo-shared` 或 `.tsumo-koha`+`.tsumo-oya`）。⚠️ 番符表**叠层不切换**（`modal-calc` 不在 `OP_MODALS`，切换会误释放操作权）；⚠️ `#modal-calc` 需 `z-index:150`（两个填额弹窗 DOM 都比它靠后，同为 100 会压住它）；座位身份用 `isDealerByName` 推导，勿读 `wind`（连庄/局数旋转下 wind 会变）
 - `prototype/tools/shot-{settle,tsumo}-calc.js`：真 Chrome CDP 393×852 截图骨架，改别的界面时复制后替换中间 `ev(...)` 步骤
 - view-lock 只改渲染 class；`bindAll` 有 `__appBound` 幂等守卫
+- **音效（2026-09-29）**：`js/sfx.js`，`window.Sfx.riichi()`。base64 data-URI 内嵌 WAV（绕开服务器 mime 白名单，mp3/ogg 会被当 text/plain）；来源=用户自录（勿换成商用游戏音频，版权）。触发点仅 renderRiichiPick 点击（`action==='riichi'` 才响、取消不响；弹窗只在操作权持有者设备打开 → 仅操作者响）。`typeof Audio` 守卫保 jsdom。加新音效：处理 WAV→base64 进 sfx.js→`Sfx.xxx()`→调用点两处无需动协议
 
 ## UI 约束
 - 面向固定窄屏 ~393px（无 `@media`）；index.html 4 `.page`（mode/setup/main/history）+ **26** 个 `#modal-*`（tsumo-review 已删）
 - ⚠️ 改版真正成本是 tests/ 上千处 DOM 断言（唯 `view-lock-test.js` 读 style.css 的 `.modal-view .view-actions .btn`）→ 不改 class 名/HTML 结构则全绿
 - 视觉稿/三方案在 `design-preview/`；现状截图在 `design-preview/audit/`
-- **外观体系（2026-09-28 落地，用户批准①②③⑤+④无徽标）**：圆角 3 档 10/14/20px；阴影 `--shadow-1`(小件)/`--shadow-2`(弹窗悬浮) 两档；字重最多 700（800/900 已清除）；`--text-dim #5F6E76`、`--gold #8F6B12`、`--danger-text #C13E2E`（危险**小字**用，负分大数字仍 `--danger #D94F3D`）；按钮一套语言=描边环+轻投影（厚底拟物已删，按压 scale(.98)）；`#toast` 在**底部**（曾压北家）；弹窗有 overlayIn/modalIn 入场动画；close-x 44px 热区、seat-chip min-height 44；座位卡 pts 22px tabular-nums 为第一焦点、wind 14px、局号 16px。**东风位即庄家（用户定），不加庄家徽标**。夜间主题（暗色变量套）已批方向未实现，放 token 之后再做
+- **外观体系（2026-09-28 落地，用户批准①②③⑤+④无徽标）**：圆角 3 档 10/14/20px；阴影 `--shadow-1`(小件)/`--shadow-2`(弹窗悬浮) 两档；字重最多 700（800/900 已清除）；`--text-dim #5F6E76`、`--gold #8F6B12`、`--danger-text #C13E2E`（危险**小字**用，负分大数字仍 `--danger #D94F3D`）；按钮一套语言=描边环+轻投影（厚底拟物已删，按压 scale(.98)）；`#toast` 在**底部**（曾压北家）；弹窗动画（2026-09-29 减晃版）：仅"从主界面新开"播 overlayIn/modalIn（`--modal-dur:.12s`、modalIn 无位移 scale .97）；**链内推进/叠层打开由 app.js 判定加 `.instant` 零动画**（判据=150ms 内关过弹窗或已有弹窗开着，因链内关旧开新两种顺序都有）；`prefers-reduced-motion` 下全禁；close-x 44px 热区、seat-chip min-height 44；座位卡 pts 22px tabular-nums 为第一焦点、wind 14px、局号 16px。**东风位即庄家（用户定），不加庄家徽标**。夜间主题（暗色变量套）已批方向未实现，放 token 之后再做

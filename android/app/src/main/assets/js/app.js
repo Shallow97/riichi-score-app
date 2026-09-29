@@ -599,12 +599,25 @@
     'modal-tsumo-amounts',   // 自摸：输入应付额
   ]);
 
+  // 链内推进判定：同一事件里"关旧开新"（两种顺序都有）或叠层打开时零动画，
+  // 只有从主界面新开弹窗才播淡入。closeModal 记时间戳，openModal 判定。
+  const MODAL_CHAIN_MS = 150;
+  let lastModalCloseAt = 0;
+
   function openModal(id) {
-    $('#' + id).classList.add('show');
+    const el = $('#' + id);
+    const chainSwitch = (Date.now() - lastModalCloseAt < MODAL_CHAIN_MS) ||
+      !!document.querySelector('.modal-overlay.show');
+    el.classList.toggle('instant', chainSwitch);
+    el.classList.add('show');
   }
   function closeModal(id) {
     const el = $('#' + id);
-    if (el) el.classList.remove('show');
+    if (el) {
+      el.classList.remove('show');
+      el.classList.remove('instant');
+      lastModalCloseAt = Date.now();
+    }
     // 扫码弹窗关闭（×/点空白/命中成功）时必须释放摄像头，否则指示灯常亮且耗电
     if (id === 'modal-scanqr') stopQrScan();
     // 番符表关闭（关闭按钮/×/点空白）：若本次是由结算填分唤起，把结果回填到分数输入框
@@ -1380,6 +1393,7 @@
         ${p.riichi ? '<div class="riichi-stick"><span class="riichi-stick-dot"></span></div>' : ''}`;
       div.addEventListener('click', () => {
         const r = Rules.doRiichi(game, p.name);
+        if (r.ok && r.action === 'riichi' && window.Sfx) Sfx.riichi();  // 仅实际宣言立直时响（取消不响）；本弹窗只在操作权持有者设备打开，天然"仅操作者手机响"
         toast(r.msg);
         Storage.saveActive(game);
         renderMain();

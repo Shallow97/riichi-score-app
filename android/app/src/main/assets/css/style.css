@@ -691,16 +691,24 @@ html, body {
   box-sizing: border-box;
 }
 
-/* 弹窗出现动画（display 切换逻辑不变，仅视觉过渡） */
-.modal-overlay.show { animation: overlayIn .15s ease-out; }
-.modal-overlay.show .modal { animation: modalIn .18s ease-out; }
+/* 弹窗出现动画：仅"从主界面新开"时播削弱版淡入（无位移、scale .92→.97、时长压到 120ms）；
+   链内推进/叠层打开由 app.js 加 .instant 直接零动画，避免频繁切换晃眼 */
+.modal-overlay { --modal-dur: .12s; }
+.modal-overlay.show { animation: overlayIn var(--modal-dur) ease-out; }
+.modal-overlay.show .modal { animation: modalIn var(--modal-dur) ease-out; }
+.modal-overlay.show.instant,
+.modal-overlay.show.instant .modal { animation: none; }
 @keyframes overlayIn {
   from { background: rgba(0,0,0,0); }
   to   { background: rgba(0,0,0,.45); }
 }
 @keyframes modalIn {
-  from { opacity: 0; transform: scale(.92) translateY(8px); }
+  from { opacity: 0; transform: scale(.97); }
   to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal-overlay.show,
+  .modal-overlay.show .modal { animation: none; }
 }
 
 /* ===== 骰子弹窗 ===== */
