@@ -1013,3 +1013,19 @@ html, body {
 }
 .scan-status.warn { color: var(--danger-text); }
 .scan-status.ok { color: var(--ok); }
+
+/* ============ 场风盘蓝牙控制（page-eink，2026-09-30） ============ */
+.eink-scan-list { margin-top: 10px; }
+.eink-scan-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; margin-top: 8px;
+  border: 1px solid var(--border); border-radius: 10px;
+  cursor: pointer; background: var(--card, #fff);
+}
+.eink-scan-item:active { opacity: .7; }
+.eink-scan-item .nm { font-size: 15px; font-weight: 700; }
+.eink-scan-item .meta { font-size: 13px; color: var(--text-dim); }
+.eink-tip {
+  margin-top: 10px; font-size: 13px; line-height: 1.6;
+  color: var(--text-dim);
+}

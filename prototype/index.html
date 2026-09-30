@@ -30,6 +30,7 @@
       </div>
       <button class="btn primary" id="btn-next-setup">下一步：开局设置</button>
       <button class="btn" id="btn-goto-history" style="margin-top:10px">查看对局记录</button>
+      <button class="btn" id="btn-goto-eink" style="margin-top:10px">场风盘蓝牙控制</button>
 
       <!-- 联网对局卡片 -->
       <div class="card" id="net-card" style="margin-top:16px">
@@ -154,6 +155,9 @@
         <div class="hint">房主可操作：流局 · 手动修正 · 撤回 · 结束对局</div>
       </div>
 
+      <!-- 场风盘立即推送（仅房主显示）：点击立即推送当前状态到墨水屏 -->
+      <button class="btn" id="btn-tag-push" style="display:none;margin-top:10px;width:100%">📡 立即推送到场风盘</button>
+
       <!-- 本半庄已结算各局的分数记录（可折叠，默认展开） -->
       <div class="actions round-log-card" id="round-log">
         <div class="round-log-head" id="round-log-head" role="button" tabindex="0">
@@ -173,6 +177,35 @@
       <h2 class="page-title">对局历史</h2>
       <div id="history-list"></div>
       <button class="btn primary" id="btn-new-game-history" style="margin-top:12px">开新对局</button>
+    </div>
+
+    <!-- ============ 页面5：场风盘蓝牙控制 ============ -->
+    <div class="page" id="page-eink">
+      <div class="topbar">
+        <span class="back" id="btn-back-eink">‹ 返回</span>
+        <span class="status">场风盘蓝牙控制</span>
+      </div>
+      <h2 class="page-title">场风盘蓝牙控制</h2>
+
+      <div class="card">
+        <h3>墨水屏场风盘</h3>
+        <div class="net-status" id="eink-status">未连接</div>
+        <button class="btn primary" id="btn-eink-connect" style="margin-top:10px;width:100%">扫描并连接场风盘</button>
+        <button class="btn" id="btn-eink-disconnect" style="margin-top:10px;width:100%;display:none">断开连接</button>
+        <div id="eink-scan-list" class="eink-scan-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="switch-row">
+          <span class="lbl">蓝牙常开（设备保持可连接，断电后仍有效）</span>
+          <div class="switch" id="switch-eink-always"></div>
+        </div>
+        <div class="eink-tip" id="eink-tip">
+          使用说明：连接后，每当有玩家立直 / 取消立直、每局结算后，当前状态会自动推送到墨水屏（10 秒内的连续变化合并为一次刷新）。
+          对局界面下方有「立即推送」按钮可手动刷新。若设备已开启蓝牙常开，无需按设备按键即可随时连接；
+          未开启时需先按一下设备蓝牙键（可连接约 5 分钟）。
+        </div>
+      </div>
     </div>
 
     <!-- ============ 模态：立直选人 ============ -->

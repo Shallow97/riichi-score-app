@@ -48,9 +48,15 @@ public class MainActivity extends Activity {
     /** 摄像头运行时权限请求码 */
     private static final int REQ_CAMERA = 1002;
 
+    /** 场风盘蓝牙运行时权限请求码 */
+    private static final int REQ_BT = 1003;
+
     private WebView webView;
     private ProgressBar progressBar;
     private boolean pageLoaded = false;
+
+    /** 场风盘：授权结果回来后要执行的连接动作（null=无）："scan" | "connect" */
+    private String pendingBtAction = null;
 
     /** WebView 发起的摄像头授权请求：等系统权限对话框有结果后再授予/拒绝 */
     private android.webkit.PermissionRequest pendingWebPermission;
@@ -141,6 +147,10 @@ public class MainActivity extends Activity {
         // 扫码预览：<video> 播放 MediaStream 不应依赖用户手势，否则部分机型上会黑屏
         s.setMediaPlaybackRequiresUserGesture(false);
 
+        // 场风盘蓝牙控制：JS ↔ 原生桥（页面通过 window.NativeBridge 调用）
+        EinkBoardManager.getInstance().init(getApplicationContext(), einkListener);
+        webView.addJavascriptInterface(new NativeBridge(), "NativeBridge");
+
         // WebView 需要支持 WebSocket（net.js 用它做联网同步）—— 系统 WebView 默认支持
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -169,6 +179,9 @@ public class MainActivity extends Activity {
         // Android 13+ 请求通知权限（前台服务常驻通知用；被拒不影响核心功能）
         requestNotificationPermission();
 
+        // 场风盘蓝牙权限（Android 12+ 运行时；被拒只影响推送，进控制页时会再请求）
+        requestBlePermission();
+
         // 启动前台服务（内含 RiichiServer + 锁屏保活），并等待端口就绪后加载页面
         startServerService();
     }
@@ -183,9 +196,127 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** 场风盘蓝牙：Android 12 (API 31)+ 需要 BLUETOOTH_CONNECT/SCAN 运行时权限 */
+    private void requestBlePermission() {
+        if (Build.VERSION.SDK_INT < 31) {
+            EinkBoardManager.getInstance().setPermissionOk();
+            return;
+        }
+        boolean connectOk = checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)
+                == PackageManager.PERMISSION_GRANTED;
+        boolean scanOk = checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN)
+                == PackageManager.PERMISSION_GRANTED;
+        if (connectOk && scanOk) {
+            EinkBoardManager.getInstance().setPermissionOk();
+        } else {
+            requestPermissions(new String[]{
+                    Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN}, REQ_BT);
+        }
+    }
+
+    /** 场风盘事件 → 转发到页面（window.EinkNative.onStatus） */
+    private final EinkBoardManager.Listener einkListener = new EinkBoardManager.Listener() {
+        @Override public void onEvent(String type, String data) {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    if (webView == null) return;
+                    String js = "window.EinkNative && EinkNative.onStatus("
+                            + jq(type) + "," + jq(data == null ? "" : data) + ")";
+                    webView.evaluateJavascript(js, null);
+                }
+            });
+        }
+        private String jq(String s) {
+            return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"")
+                    .replace("\n", "\\n").replace("\r", "\\r") + "\"";
+        }
+    };
+
+    /** JS → 原生：场风盘蓝牙控制接口（方法运行在 WebView 桥线程，内部自行切线程） */
+    private class NativeBridge {
+
+        /** 连接：无权限先请求（结果回来后自动扫描）；有权限直接扫描出设备列表 */
+        @android.webkit.JavascriptInterface
+        public void einkConnect() {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    if (Build.VERSION.SDK_INT >= 31
+                            && (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
+                            || checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED)) {
+                        pendingBtAction = "scan";
+                        requestPermissions(new String[]{
+                                Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN}, REQ_BT);
+                        return;
+                    }
+                    EinkBoardManager.getInstance().setPermissionOk();
+                    EinkBoardManager.getInstance().startScan();
+                }
+            });
+        }
+
+        /** 连接扫描列表中选中的设备（记住该设备，之后自动连） */
+        @android.webkit.JavascriptInterface
+        public void einkConnectAddr(String address) {
+            EinkBoardManager.getInstance().connect(address);
+        }
+
+        @android.webkit.JavascriptInterface
+        public void einkDisconnect() {
+            EinkBoardManager.getInstance().disconnect();
+        }
+
+        /** 连接已记住的设备（进入控制页时调用） */
+        @android.webkit.JavascriptInterface
+        public void einkAutoConnect() {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    if (Build.VERSION.SDK_INT >= 31
+                            && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                        pendingBtAction = "auto";
+                        requestPermissions(new String[]{
+                                Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN}, REQ_BT);
+                        return;
+                    }
+                    EinkBoardManager.getInstance().setPermissionOk();
+                }
+            });
+        }
+
+        /** 蓝牙常开开关（epd-noclock 0x25） */
+        @android.webkit.JavascriptInterface
+        public void einkSetAlwaysOn(boolean on) {
+            EinkBoardManager.getInstance().setBleAlwaysOn(on);
+        }
+
+        /** 是否已记住设备 */
+        @android.webkit.JavascriptInterface
+        public boolean einkHasSaved() {
+            return EinkBoardManager.getInstance().hasSavedDevice();
+        }
+
+        /** 单机兜底推送（WS 不可用时用；联网模式走 push-tag 消息） */
+        @android.webkit.JavascriptInterface
+        public void pushTag(String dataJson, boolean immediate) {
+            EinkBoardManager.getInstance().requestPush(dataJson, immediate);
+        }
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        // 场风盘蓝牙权限：授予后执行挂起的动作（扫描 / 自动连记住设备）
+        if (requestCode == REQ_BT) {
+            boolean granted = true;
+            for (int r : grantResults) if (r != PackageManager.PERMISSION_GRANTED) granted = false;
+            if (granted) {
+                EinkBoardManager.getInstance().setPermissionOk();
+                if ("scan".equals(pendingBtAction)) EinkBoardManager.getInstance().startScan();
+            } else {
+                einkListener.onEvent("log", "蓝牙权限被拒绝，无法连接场风盘");
+            }
+            pendingBtAction = null;
+            return;
+        }
         // 通知权限被拒也可用；无需特殊处理
         if (requestCode != REQ_CAMERA) return;
         boolean granted = grantResults.length > 0

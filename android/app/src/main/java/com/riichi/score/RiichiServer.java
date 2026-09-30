@@ -261,6 +261,17 @@ public class RiichiServer {
                 }
                 break;
             }
+            case "push-tag": {
+                // 场风盘蓝牙推送请求：JS 在立直宣言/取消、局结算后发出（含渲染所需精简 data）。
+                // 立即推送（immediate=true，立即推送按钮）与自动推送（10s 节流在 EinkBoardManager 内合并）。
+                // 数据有效性由 EinkTagRenderer.parse 兜底，任何连接发的都处理（成员操作也触发推送）。
+                String data = extractJsonObject(raw, "data");
+                if (data != null) {
+                    boolean immediate = "true".equals(jsonStr(raw, "immediate"));
+                    EinkBoardManager.getInstance().requestPush(data, immediate);
+                }
+                break;
+            }
             default:
                 break;
         }
@@ -487,6 +498,31 @@ public class RiichiServer {
             while (end < json.length() && json.charAt(end) != ',' && json.charAt(end) != '}') end++;
             return json.substring(idx, end).trim();
         }
+    }
+
+    /** 提取顶层 "key":{...} 的对象子串（花括号配对；对象含嵌套时安全），找不到返回 null */
+    private static String extractJsonObject(String json, String key) {
+        String marker = "\"" + key + "\":";
+        int start = json.indexOf(marker);
+        if (start < 0) return null;
+        start += marker.length();
+        int open = json.indexOf('{', start);
+        if (open < 0) return null;
+        int depth = 0;
+        boolean inStr = false;
+        for (int i = open; i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (inStr) {
+                if (c == '\\') i++;
+                else if (c == '"') inStr = false;
+            } else if (c == '"') inStr = true;
+            else if (c == '{') depth++;
+            else if (c == '}') {
+                depth--;
+                if (depth == 0) return json.substring(open, i + 1);
+            }
+        }
+        return null;
     }
 
     private String operatorJson() {

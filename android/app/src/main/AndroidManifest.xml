@@ -18,6 +18,13 @@
     <!-- 声明非必需，避免无摄像头设备（模拟器/平板）被应用市场过滤 -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- 场风盘蓝牙推送：BLE 扫描与连接（Android 12+ 运行时申请，被拒只影响推送功能） -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+            android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- 蓝牙功能非必需，避免无蓝牙设备被应用市场过滤 -->
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+
     <application
         android:allowBackup="true"
         android:icon="@drawable/ic_launcher"

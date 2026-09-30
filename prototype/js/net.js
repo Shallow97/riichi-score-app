@@ -173,6 +173,17 @@
     emitStatus();
   };
 
+  // 场风盘推送请求：发给房主服务器（原生侧收到后经 EinkBoardManager 渲染推送到墨水屏）。
+  // immediate=true 立即推送（立即推送按钮）；false 走 10s 节流（自动推送）。
+  // data = 渲染所需精简状态（mode/over/endReason/roundWind/roundNum/honba/kyotaku/players）。
+  Net.sendTagPush = function (data, immediate) {
+    if (!online || !ws || ws.readyState !== 1) return false;
+    try {
+      ws.send(JSON.stringify({ type: 'push-tag', immediate: !!immediate, data: data }));
+      return true;
+    } catch (e) { return false; }
+  };
+
   // 房主结束对局：把归档记录广播给所有成员，成员据此同步结束并跳转历史页
   // 记录以序列化字符串传输（与 host-state 的 state 一致，兼容 Java 字符串协议）
   Net.endGame = function (record) {
