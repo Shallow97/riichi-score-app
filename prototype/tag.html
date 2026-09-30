@@ -119,35 +119,20 @@
     ctx.textAlign = 'right';
     ctx.fillText(fmt(p.points), L / 2 - 12, -H / 2 + scoreSize + 12);
     ctx.textAlign = 'left';
-    // 立直显示区：立直棒（白身黑框、中心红点）；>2 根画 2 根 + ×N
-    if (p.riichiBars > 0) {
-      var n = p.riichiBars, sw = 56, sh = 14, gap = 10, cy = H / 2 - 20;
-      // 长边最多画 3 根，短边最多 1 根；超出上限画满上限再标 ×N
-      var shown, label = '';
-      if (n > (wide ? 3 : 2)) { shown = wide ? 2 : 1; label = '×' + n; }
-      else { shown = n; }
-      var total = shown * sw + (shown - 1) * gap + (label ? 6 + 20 : 0);
-      var sx = -total / 2;
-      for (var s = 0; s < shown; s++) {
-        var x = sx + s * (sw + gap);
-        ctx.fillStyle = WHITE;
-        stickPath(x, cy - sh / 2, sw, sh, sh / 2);
-        ctx.fill();
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = BLACK;
-        ctx.stroke();
-        ctx.fillStyle = RED;
-        ctx.beginPath();
-        ctx.arc(x + sw / 2, cy, 4.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      if (label) {
-        ctx.fillStyle = BLACK;
-        ctx.font = 'bold 18px sans-serif';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(label, sx + shown * (sw + gap) + 6, cy);
-        ctx.textBaseline = 'alphabetic';
-      }
+    // 立直显示区：当前宣言立直状态（与 APP 主界面同口径 p.riichi，
+    // 结算后自动清空；勿用 p.riichiBars——那是供托池记账字段，终局后不归零）
+    if (p.riichi) {
+      var sw = 56, sh = 14, cy = H / 2 - 20, sx = -sw / 2;
+      ctx.fillStyle = WHITE;
+      stickPath(sx, cy - sh / 2, sw, sh, sh / 2);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = BLACK;
+      ctx.stroke();
+      ctx.fillStyle = RED;
+      ctx.beginPath();
+      ctx.arc(sx + sw / 2, cy, 4.5, 0, Math.PI * 2);
+      ctx.fill();
     }
     ctx.restore();
   }
@@ -202,7 +187,7 @@
     if (!g) return '';
     return g.round.wind + g.round.num + '|' + g.honba + '|' + g.kyotaku + '|' + g.over + '|' +
       (g.players || []).map(function (p) {
-        return [p.wind, p.points, p.riichiBars, p.name].join(',');
+        return [p.wind, p.points, p.riichi ? 1 : 0, p.name].join(',');
       }).join('|');
   }
 
@@ -271,15 +256,15 @@
   }
 
   /* 演示数据：东2局（庄家已轮转一次）——红色"东"应出现在右边（座位南），
-     展示 1 根 / 2 根 / ×3 三种立直棒画法；分数总和+场供=100000 */
+     两家立直（riichi=true，与 APP 界面同口径）、两家未立直；分数总和+场供=100000 */
   function DEMO_GAME() {
     return {
       mode: 4,
       players: [
-        { seat: '东', wind: '北', name: '小立', points: 25100, riichi: false, riichiBars: 1 },
-        { seat: '南', wind: '东', name: '阿茂', points: 32400, riichi: true, riichiBars: 3 },
-        { seat: '西', wind: '南', name: '豆沙包', points: 33300, riichi: false, riichiBars: 0 },
-        { seat: '北', wind: '西', name: '小鱼', points: 8200, riichi: true, riichiBars: 2 },
+        { seat: '东', wind: '北', name: '小立', points: 25100, riichi: false, riichiBars: 0 },
+        { seat: '南', wind: '东', name: '阿茂', points: 32400, riichi: true, riichiBars: 1 },
+        { seat: '西', wind: '南', name: '豆沙包', points: 34300, riichi: false, riichiBars: 0 },
+        { seat: '北', wind: '西', name: '小鱼', points: 7200, riichi: true, riichiBars: 1 },
       ],
       opts: { westRule: false, multiRon: false, dealerName: '阿茂' },
       dealerIndex: 1,
