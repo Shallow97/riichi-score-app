@@ -75,14 +75,14 @@
      四人：东下/南右/西上/北左；三人（座位东南西）：东下/南右/西左，上留空。 */
   var EDGE_4 = {
     '东': { rect: [0, 220, 400, 80], angle: 0 },
-    '南': { rect: [300, 80, 100, 140], angle: -Math.PI / 2 },
+    '南': { rect: [280, 80, 120, 140], angle: -Math.PI / 2 },
     '西': { rect: [0, 0, 400, 80], angle: Math.PI },
-    '北': { rect: [0, 80, 100, 140], angle: Math.PI / 2 },
+    '北': { rect: [0, 80, 120, 140], angle: Math.PI / 2 },
   };
   var EDGE_3 = {
     '东': { rect: [0, 220, 400, 80], angle: 0 },
-    '南': { rect: [300, 80, 100, 140], angle: -Math.PI / 2 },
-    '西': { rect: [0, 80, 100, 140], angle: Math.PI / 2 },
+    '南': { rect: [280, 80, 120, 140], angle: -Math.PI / 2 },
+    '西': { rect: [0, 80, 120, 140], angle: Math.PI / 2 },
   };
 
   function stickPath(x, y, w, h, r) {
@@ -108,7 +108,7 @@
     ctx.rotate(angle);
     ctx.textBaseline = 'alphabetic';
     ctx.textAlign = 'left';
-    var windSize = wide ? 46 : 34, scoreSize = wide ? 34 : 24;
+    var windSize = 46, scoreSize = 34; // 四边统一字号（用户定）
     if (wide) {
       // 长边（400 宽）：风位左、分数右
       ctx.fillStyle = (p.wind === '东') ? RED : BLACK;
@@ -116,24 +116,26 @@
       ctx.fillText(p.wind, -L / 2 + 12, -H / 2 + windSize + 8);
       ctx.fillStyle = p.points < 0 ? RED : BLACK;
       ctx.font = 'bold ' + scoreSize + 'px sans-serif';
+      if (ctx.measureText(fmt(p.points)).width > L - 24) ctx.font = 'bold 28px sans-serif';
       ctx.textAlign = 'right';
       ctx.fillText(fmt(p.points), L / 2 - 12, -H / 2 + scoreSize + 12);
       ctx.textAlign = 'left';
     } else {
-      // 短边（140 宽）：风位与分数上下堆叠居中（横排会挤在一起）
+      // 短边（120 宽条）：风位与分数上下堆叠居中（横排会挤在一起）
       ctx.textAlign = 'center';
       ctx.fillStyle = (p.wind === '东') ? RED : BLACK;
       ctx.font = 'bold ' + windSize + 'px sans-serif';
-      ctx.fillText(p.wind, 0, -H / 2 + windSize + 10);
+      ctx.fillText(p.wind, 0, -H / 2 + windSize + 8);
       ctx.fillStyle = p.points < 0 ? RED : BLACK;
       ctx.font = 'bold ' + scoreSize + 'px sans-serif';
+      if (ctx.measureText(fmt(p.points)).width > L - 12) ctx.font = 'bold 28px sans-serif';
       ctx.fillText(fmt(p.points), 0, H / 2 - 26);
       ctx.textAlign = 'left';
     }
     // 立直显示区：当前宣言立直状态（与 APP 主界面同口径 p.riichi，
     // 结算后自动清空；勿用 p.riichiBars——那是供托池记账字段，终局后不归零）
     if (p.riichi) {
-      var sw = 56, sh = 14, cy = H / 2 - (wide ? 20 : 10), sx = -sw / 2;
+      var sw = 56, sh = 14, cy = H / 2 - (wide ? 20 : 8), sx = -sw / 2;
       ctx.fillStyle = WHITE;
       stickPath(sx, cy - sh / 2, sw, sh, sh / 2);
       ctx.fill();
@@ -163,31 +165,31 @@
       if (lay) drawEdge(p, lay.rect, lay.angle);
     }
 
-    // 中间信息板
+    // 中间信息板（缩小，给四边让空间）
     ctx.strokeStyle = BLACK;
     ctx.lineWidth = 3;
-    ctx.strokeRect(101.5, 81.5, 197, 137);
+    ctx.strokeRect(125.5, 95.5, 149, 109);
     ctx.fillStyle = BLACK;
     ctx.textAlign = 'center';
     if (game.over) {
-      ctx.font = 'bold 52px sans-serif';
-      ctx.fillText('终局', 200, 150);
-      ctx.font = '24px sans-serif';
-      ctx.fillText((game.endReason || '').slice(0, 12), 200, 195);
+      ctx.font = 'bold 40px sans-serif';
+      ctx.fillText('终局', 200, 152);
+      ctx.font = '18px sans-serif';
+      ctx.fillText((game.endReason || '').slice(0, 12), 200, 186);
     } else {
-      ctx.font = 'bold 48px sans-serif';
+      ctx.font = 'bold 36px sans-serif';
       ctx.fillText(game.round.wind + game.round.num + '局', 200, 148);
       var sHonba = game.honba + '本场';
       var sKyotaku = game.kyotaku > 0 ? ('场供' + game.kyotaku) : '';
-      ctx.font = '26px sans-serif';
+      ctx.font = '20px sans-serif';
       var w1 = ctx.measureText(sHonba).width;
-      var w2 = sKyotaku ? ctx.measureText(sKyotaku).width + 18 : 0;
-      if (w1 + w2 > 190) { ctx.font = '22px sans-serif'; w1 = ctx.measureText(sHonba).width; w2 = sKyotaku ? ctx.measureText(sKyotaku).width + 14 : 0; }
+      var w2 = sKyotaku ? ctx.measureText(sKyotaku).width + 14 : 0;
+      if (w1 + w2 > 135) { ctx.font = '18px sans-serif'; w1 = ctx.measureText(sHonba).width; w2 = sKyotaku ? ctx.measureText(sKyotaku).width + 12 : 0; }
       var sx = 200 - (w1 + w2) / 2;
       ctx.textAlign = 'left';
       ctx.fillStyle = BLACK;
-      ctx.fillText(sHonba, sx, 196);
-      if (sKyotaku) { ctx.fillStyle = RED; ctx.fillText(sKyotaku, sx + w1 + 18, 196); }
+      ctx.fillText(sHonba, sx, 184);
+      if (sKyotaku) { ctx.fillStyle = RED; ctx.fillText(sKyotaku, sx + w1 + 14, 184); }
       ctx.textAlign = 'center';
     }
     ctx.textAlign = 'left';
