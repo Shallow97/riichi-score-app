@@ -882,6 +882,9 @@
     $('#btn-tsumo-ron').disabled = game.over || !localOper;      // 和牌结算：所有玩家可操作
     $('#btn-end').disabled = globalOnly;                         // 结束对局仅房主
 
+    // 场风盘「立即推送」：仅房主显示（单机也是房主）
+    $('#btn-tag-push').style.display = isHost() ? '' : 'none';
+
     // 新局开始校验：局数/本场变化时校验场上总分
     const roundMark = game.round.wind + game.round.num + '-' + game.honba;
     if (roundMark !== lastCheckedRound) {
@@ -979,6 +982,37 @@
   function isHost() {
     if (window.Net && Net.isInRoom()) return Net.isHost();
     return true;
+  }
+
+  // ============ 场风盘蓝牙推送（2026-09-30，需求定稿见 memory） ============
+  // 自动推送触发：立直宣言/取消、每局结算（荣和/自摸/流局）；手动修正不自动推。
+  // 节流在原生侧（EinkBoardManager 10s 合并）；immediate=true（立即推送按钮）不受限。
+  // 通道：联网走 WS push-tag 消息（服务器=房主手机原生侧处理）；WS 不可用但有
+  // NativeBridge（APP 内）时直接调原生；电脑浏览器无两者则静默跳过。
+  function tagDataFromGame() {
+    if (!game) return null;
+    return {
+      mode: game.mode,
+      over: !!game.over,
+      endReason: game.endReason || '',
+      roundWind: game.round.wind,
+      roundNum: game.round.num,
+      honba: game.honba,
+      kyotaku: game.kyotaku,
+      players: game.players.map((p) => ({
+        seat: p.seat, wind: p.wind, points: p.points, riichi: !!p.riichi,
+      })),
+    };
+  }
+
+  function notifyTagPush(immediate) {
+    const data = tagDataFromGame();
+    if (!data) return;
+    let sent = false;
+    if (window.Net && Net.isOnline()) sent = Net.sendTagPush(data, immediate);
+    if (!sent && window.NativeBridge && window.NativeBridge.pushTag) {
+      try { window.NativeBridge.pushTag(JSON.stringify(data), !!immediate); } catch (e) {}
+    }
   }
   // 本机能否操作"结算/立直"（平权模型，房主与成员一致）：
   //  - 单机/未进房：始终可
@@ -1394,6 +1428,7 @@
       div.addEventListener('click', () => {
         const r = Rules.doRiichi(game, p.name);
         if (r.ok && r.action === 'riichi' && window.Sfx) Sfx.riichi();  // 仅实际宣言立直时响（取消不响）；本弹窗只在操作权持有者设备打开，天然"仅操作者手机响"
+        if (r.ok) notifyTagPush(false);  // 立直宣言/取消 → 场风盘自动推送（节流）
         toast(r.msg);
         Storage.saveActive(game);
         renderMain();
@@ -1761,6 +1796,7 @@
     const r = Rules.applyRoundResult(game, result);
     // 结算后保存
     Storage.saveActive(game);
+    notifyTagPush(false);  // 局结算 → 场风盘自动推送（节流）
 
     if (!balanced) {
       toast(result.balanceWarning);
@@ -1873,6 +1909,7 @@
       };
       const r = Rules.applyRoundResult(game, result);
       Storage.saveActive(game);
+      notifyTagPush(false);  // 流局结算 → 场风盘自动推送（节流）
       toast(r.msg);
       closeModal('modal-flow');
       renderMain();
@@ -1944,6 +1981,7 @@
       const riichiNames = currentRiichiNames();
       const r = Rules.applyRoundResult(game, result);
       Storage.saveActive(game);
+      notifyTagPush(false);  // 流局结算 → 场风盘自动推送（节流）
       toast(r.msg);
       closeModal('modal-flow-koei');
       renderMain();
@@ -2244,6 +2282,98 @@
   }
 
   // ============ 绑定所有 ============
+  // ============ 场风盘蓝牙控制页（page-eink） ============
+  // 原生 → JS 状态回调入口（MainActivity.evaluateJavascript 调用；浏览器/jsdom 中不触发）
+  let einkScanning = false;
+  window.EinkNative = {
+    onStatus: function (type, data) {
+      const st = $('#eink-status');
+      if (type === 'scanning') {
+        einkScanning = true;
+        if (st) st.textContent = '扫描中…（按一下墨水屏的蓝牙键可激活约 5 分钟可连接）';
+        const list = $('#eink-scan-list');
+        if (list) list.innerHTML = '';
+      } else if (type === 'scan') {
+        let dev = null;
+        try { dev = JSON.parse(data); } catch (e) { return; }
+        const list = $('#eink-scan-list');
+        if (!list || !dev) return;
+        const item = document.createElement('div');
+        item.className = 'eink-scan-item';
+        item.innerHTML = '<span class="nm">' + escapeHtml(dev.name || '未知设备') + '</span>'
+          + '<span class="meta">' + dev.rssi + ' dBm</span>';
+        item.addEventListener('click', () => {
+          if (window.NativeBridge && window.NativeBridge.einkConnectAddr) {
+            window.NativeBridge.einkConnectAddr(dev.addr);
+            toast('正在连接 ' + (dev.name || '设备') + ' …');
+          }
+        });
+        list.appendChild(item);
+      } else if (type === 'scan-done') {
+        einkScanning = false;
+        const list = $('#eink-scan-list');
+        if (list && list.children.length === 0 && st) {
+          st.textContent = '扫描完成，未发现场风盘设备';
+        }
+        // 连接成功时状态由 connected 事件覆盖
+      } else if (type === 'connected') {
+        if (st) st.textContent = '已连接：' + data;
+        const btnC = $('#btn-eink-connect'), btnD = $('#btn-eink-disconnect');
+        if (btnC) btnC.style.display = 'none';
+        if (btnD) btnD.style.display = '';
+        const list = $('#eink-scan-list');
+        if (list) list.innerHTML = '';
+      } else if (type === 'disconnected') {
+        if (st) st.textContent = '未连接';
+        const btnC = $('#btn-eink-connect'), btnD = $('#btn-eink-disconnect');
+        if (btnC) btnC.style.display = '';
+        if (btnD) btnD.style.display = 'none';
+        const sw = $('#switch-eink-always');
+        if (sw) sw.classList.remove('on');
+      } else if (type === 'ble') {
+        const sw = $('#switch-eink-always');
+        if (sw) sw.classList.toggle('on', data === '1');
+      } else if (type === 'log') {
+        if (type && data) toast(data);
+      } else if (type === 'push-status') {
+        if (data === 'done') toast('场风盘已更新');
+      }
+    },
+  };
+
+  function bindEinkPage() {
+    $('#btn-goto-eink').addEventListener('click', () => {
+      showPage('page-eink');
+      // 进入页面时：已记住设备则自动连接（原生侧处理）
+      if (window.NativeBridge && window.NativeBridge.einkAutoConnect) {
+        window.NativeBridge.einkAutoConnect();
+      }
+    });
+    $('#btn-back-eink').addEventListener('click', () => showPage('page-mode'));
+    $('#btn-eink-connect').addEventListener('click', () => {
+      if (window.NativeBridge && window.NativeBridge.einkConnect) {
+        window.NativeBridge.einkConnect();  // 原生处理权限请求→扫描
+      } else {
+        toast('蓝牙推送仅支持在 APP 内使用');
+      }
+    });
+    $('#btn-eink-disconnect').addEventListener('click', () => {
+      if (window.NativeBridge && window.NativeBridge.einkDisconnect) window.NativeBridge.einkDisconnect();
+    });
+    // 蓝牙常开开关：连接后才可操作；状态以设备回报（ble=0/1）为准
+    $('#switch-eink-always').addEventListener('click', () => {
+      const sw = $('#switch-eink-always');
+      const bridge = window.NativeBridge;
+      if (!bridge || !bridge.einkSetAlwaysOn) {
+        toast('此功能需在 APP 内使用');
+        return;
+      }
+      const turningOn = !sw.classList.contains('on');
+      sw.classList.toggle('on', turningOn); // 乐观更新，设备回报（ble=）会纠正
+      bridge.einkSetAlwaysOn(turningOn);
+    });
+  }
+
   function bindAll() {
     if (window.__appBound) return; // 幂等：避免 DOMContentLoaded 重复触发导致的重复绑定
     window.__appBound = true;
@@ -2306,9 +2436,18 @@
       );
     });
 
-    // 开关组件
+    // 开关组件（蓝牙常开开关在下方单独绑定，需发命令+校验连接）
     document.querySelectorAll('.switch').forEach((sw) => {
+      if (sw.id === 'switch-eink-always') return; // 跳过，见 bindEinkPage
       sw.addEventListener('click', () => sw.classList.toggle('on'));
+    });
+
+    // ============ 场风盘蓝牙控制页 ============
+    bindEinkPage();
+    // 立即推送按钮
+    $('#btn-tag-push').addEventListener('click', () => {
+      notifyTagPush(true);  // 立即推送（不受节流限制）
+      toast('已请求推送到场风盘');
     });
 
     // 切到后台时立刻释放摄像头（避免扫码弹窗还开着就把摄像头一直占着）

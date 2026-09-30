@@ -1,0 +1,1031 @@
+/* 日麻计分 APP 原型样式 — 浅色现代风（对齐 Ardot 高保真设计稿 Token） */
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+:root {
+  --page-bg: #F4F6F4;        /* 背景 */
+  --surface: #FFFFFF;        /* 卡片/桌面/弹窗 纯白 */
+  --surface-alt: #EDF4F0;    /* 浅绿衬底(选中态/提示) */
+  --accent: #1E7A4E;         /* 品牌绿(主按钮/标题/方位) */
+  --accent-dark: #155F3D;    /* 品牌绿按压态 */
+  --accent-light: #E6F0EA;   /* 桌面淡淡绿 */
+  --accent-soft: #E3F0E8;    /* 选中态浅绿衬底（player-pick / round-cell 共用） */
+  --gold: #8F6B12;           /* 金色(辅助强调)；加深版，白底对比 4.91:1（旧 #C9992E 仅 2.60 不达 AA） */
+  --border: #E3E8E6;         /* 发丝线描边 */
+  --border-strong: #C4D0CA;  /* 较强描边 */
+
+  --text: #27343D;           /* 正文 墨 */
+  --text-strong: #1C2B24;    /* 数字/关键 深墨 */
+  --text-dim: #5F6E76;       /* 弱化文字；加深版，白底对比 5.28:1（旧 #8A979E 仅 3.00 不达 AA） */
+
+  --btn-bg: #FFFFFF;         /* 次按钮 纯白 */
+  --btn-text: #1E7A4E;       /* 次按钮文字 品牌绿 */
+  --btn-border: #C4D0CA;
+
+  --danger: #D94F3D;         /* 危险底色/大字号负分（大文字 ≥3:1 达标） */
+  --danger-text: #C13E2E;    /* 危险小字用；白底对比 5.26:1（#D94F3D 仅 4.09） */
+  --danger-dark: #8e2a1f;    /* 危险按钮按压态 */
+  --ok: #1E9E63;
+  --red: #D94F3D;
+  --btn-press: #EFF3F0;      /* 次按钮按压态（白底微暗） */
+
+  /* 阴影两档（Token 收敛）：小卡/座位用 -1，弹窗/悬浮件用 -2 */
+  --shadow-1: 0 1px 3px rgba(28,43,36,.10);
+  --shadow-2: 0 4px 14px rgba(28,43,36,.14);
+  --shadow: var(--shadow-2); /* 兼容旧引用 */
+}
+
+html, body {
+  height: 100%;
+  font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  background: var(--page-bg);
+  color: var(--text);
+}
+
+#app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== 通用页面容器 ===== */
+.page {
+  display: none;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 16px;
+  /* 全面屏手势条不遮挡内容 */
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  max-width: 480px;
+  margin: 0 auto;
+  width: 100%;
+}
+.page.active { display: flex; }
+
+.page-title {
+  text-align: center;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
+  margin: 8px 0 16px;
+  letter-spacing: 2px;
+}
+
+/* ===== 卡片 ===== */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+.card h3 {
+  font-size: 15px;
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+
+/* ===== 按钮 ===== */
+/* 统一按钮语言：不再用 4px 厚底拟物（与描边类组件两套语言混屏），
+   实心按钮用轻投影表达"可按"，次按钮/幽灵按钮用描边，按压统一 scale 反馈 */
+.btn {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  border: none;
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 600;
+  background: var(--btn-bg);
+  color: var(--btn-text);
+  box-shadow: 0 0 0 1px var(--btn-border), var(--shadow-1);
+  cursor: pointer;
+  transition: transform .05s, background .05s, opacity .2s;
+}
+.btn:active { transform: scale(.98); background: var(--btn-press); }
+.btn.primary { background: var(--accent); box-shadow: 0 2px 6px rgba(30,122,78,.28); color: #fff; }
+.btn.primary:active { background: var(--accent-dark); }
+.btn.danger { background: var(--danger); box-shadow: 0 2px 6px rgba(217,79,61,.30); color: #fff; }
+.btn.danger:active { background: var(--danger-dark); }
+.btn.ghost { background: transparent; border: 1px solid var(--border-strong); color: var(--btn-text); box-shadow: var(--shadow-1); }
+.btn.ghost:active { background: rgba(30,122,78,.06); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn + .btn { margin-top: 10px; }
+
+/* flex/grid 容器内的按钮：间距一律由容器 gap 接管，归零 .btn + .btn 的 margin-top。
+   （历史坑：相邻 .btn 的 margin-top 会把后一个按钮顶下 10px 且拉伸不齐，见 .action-grid 注释）
+   新增 flex/grid 按钮容器时请把选择器加入此列表，勿依赖各处手动归零。 */
+.action-grid .btn,
+.quick-step .btn,
+.dice-actions .btn,
+.modal-view .view-actions .btn,
+.net-joinroom-row .btn { margin-top: 0; }
+
+/* ===== 表单 ===== */
+.field { margin-bottom: 14px; }
+.field label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
+.field input[type="text"],
+.field input[type="number"],
+.field select {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 16px;
+  background: var(--surface);
+  color: var(--text-strong);
+}
+.field input:focus, .field select:focus { outline: 2px solid var(--accent); }
+
+/* 逐行表单（自摸逐家填分） */
+.field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.field-row .lbl { font-size: 14px; color: var(--text); white-space: nowrap; }
+.field-row .num-input {
+  width: 110px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 18px;
+  text-align: center;
+  font-weight: 700;
+  background: var(--surface);
+  color: var(--text-strong);
+}
+
+/* 开关行 */
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+}
+.switch-row .lbl { font-size: 15px; }
+.switch {
+  position: relative;
+  width: 52px; height: 30px;
+  background: var(--border-strong);
+  border-radius: 30px;
+  transition: background .2s;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.switch::after {
+  content: "";
+  position: absolute; top: 3px; left: 3px;
+  width: 24px; height: 24px;
+  background: #fff; border-radius: 50%;
+  transition: transform .2s;
+}
+.switch.on { background: var(--accent); }
+.switch.on::after { transform: translateX(22px); }
+
+/* ===== 模式选择 ===== */
+.mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.mode-card {
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: 14px;
+  padding: 22px 12px;
+  text-align: center;
+  cursor: pointer;
+  transition: all .15s;
+}
+.mode-card.selected { border-color: var(--accent); background: var(--surface-alt); }
+.mode-card .big { font-size: 34px; font-weight: 700; color: var(--accent); }
+.mode-card .sub { font-size: 13px; color: var(--text-dim); margin-top: 6px; }
+
+/* ===== 对局桌面 ===== */
+.table {
+  position: relative;
+  width: 100%;
+  max-width: 460px;
+  aspect-ratio: 1;
+  margin: 10px auto;
+  background:
+    radial-gradient(circle at 50% 50%, #FFFFFF 0%, var(--accent-light) 55%, #CDE0D4 100%);
+  border-radius: 20px;
+  box-shadow: inset 0 0 30px rgba(30,122,78,.10), var(--shadow-2);
+  border: 4px solid #C4D5CA;
+}
+
+.seat {
+  position: absolute;
+  width: 108px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 8px 6px;
+  text-align: center;
+  box-shadow: var(--shadow-1);
+}
+/* 南=下方(自己)，北=上方，东=左，西=右 */
+.seat-south { left: 50%; bottom: 8px; transform: translateX(-50%); }
+.seat-north { left: 50%; top: 8px; transform: translateX(-50%); }
+.seat-east  { left: 8px; top: 50%; transform: translateY(-50%); }
+.seat-west  { right: 8px; top: 50%; transform: translateY(-50%); }
+
+/* 信息层级：分数是第一焦点 → 分数加大+等宽数字，风字收敛（东=庄家为既定约定，不加徽标） */
+.seat .wind { font-size: 14px; font-weight: 700; color: var(--accent); line-height: 1.2; }
+/* 风牌四色（Ardot 设计稿）：东红/南绿/西蓝/北黑 */
+.seat .wind-东 { color: #D94F3D; }
+.seat .wind-南 { color: #2E8B57; }
+.seat .wind-西 { color: #3D6FB4; }
+.seat .wind-北 { color: #333A45; }
+.seat .name { font-size: 12px; color: var(--text); margin: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seat .you-mark {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 6px;
+  padding: 1px 5px;
+  line-height: 1.4;
+}
+.seat .pts { font-size: 22px; font-weight: 700; color: var(--text-strong); font-variant-numeric: tabular-nums; letter-spacing: -.3px; }
+.seat .pts.neg { color: #D94F3D; }  /* 20px+ 粗体属大文字，3:1 即达标，保持品牌危险红 */
+.seat .pts.neg2 { color: #C9992E; }
+.seat .meta { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+
+/* 骰子按钮：位于绿色桌布右下角 */
+.dice-btn {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: 44px;
+  height: 44px;
+  font-size: 26px;
+  line-height: 1;
+  color: #ffffff;
+  background: rgba(30,122,78,.85);
+  border: 2px solid rgba(255,255,255,.6);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: var(--shadow-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform .12s ease, background .12s ease;
+  z-index: 5;
+}
+.dice-btn:hover { background: rgba(24,104,66,.95); transform: scale(1.06); }
+.dice-btn:active { transform: scale(.94); }
+
+/* 番符表计算器按钮：位于绿色桌布左下角（与骰子对称） */
+.calc-btn {
+  right: auto;
+  left: 12px;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+/* 视角切换按钮：位于绿色桌布左上角（与右下角骰子对角） */
+.view-btn {
+  right: auto;
+  left: 12px;
+  bottom: auto;
+  top: 12px;
+  font-size: 0; /* 图标纯 SVG，隐藏文字基线占位 */
+  padding: 0;
+  line-height: 0;
+}
+.view-btn svg { display: block; }
+
+/* 规则查询按钮（？）：位于绿色桌布右上角（与左上角视角对角），只读查询
+   用无衬线黑体问号并依赖 .dice-btn 的 flex 居中。黑体全角问号字形在 flex 下视觉重心偏左，
+   故对字形包一层 .help-q 用 translateX 右移补偿，使其落在圆形正中（经滑块预览确认补偿 +5px） */
+.help-btn {
+  right: 12px;
+  left: auto;
+  bottom: auto;
+  top: 12px;
+  font-size: 24px;
+  font-weight: 700; /* 字重收敛：900→700（原 900 与全局 800 一并去除）；下方 translateX 补偿需复核 */
+  font-family: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
+  line-height: 1;
+}
+.help-q {
+  display: inline-block;
+  transform: translateX(5px); /* 用户滑块确认：右移 5px 使问号视觉居中（900 字重时校准，700 后已截图复核） */
+}
+
+/* 视角切换 弹窗 */
+.modal.modal-view { max-width: 380px; }
+.modal-view .view-desc { font-size: 12.5px; color: var(--text); line-height: 1.5; margin: 0 0 6px; }
+.modal-view .view-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 14px;
+}
+.modal-view .view-actions .btn {
+  flex: 1;
+  min-width: 0;
+  /* 锁定两个按钮完全同高：固定高度 + 内容居中，避免不同字号/字符数渲染差 */
+  height: 50px;
+  min-height: 50px;
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-size: 16px;
+  vertical-align: middle;
+}
+.modal-view .view-current {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--accent);
+  text-align: center;
+}
+
+/* 番符点数表 弹窗 */
+.modal.modal-calc { max-width: 340px; }
+.calc-inputs { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.calc-inputs label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text);
+  gap: 8px;
+}
+.calc-inputs select {
+  flex: 1;
+  max-width: 150px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+}
+.calc-seat { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); }
+.calc-seat > span { margin-right: 2px; }
+/* 座位 chip：min-height 44px 达到推荐触控目标 */
+.seat-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 5px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 22px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+.seat-chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+/* 联动模式（从结算填分唤起）下另一座位被锁定：变灰且不可点 */
+.seat-chip.locked {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.calc-result {
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: var(--surface);
+}
+.calc-row { display: flex; align-items: baseline; justify-content: space-between; padding: 4px 0; }
+.calc-row + .calc-row { border-top: 1px solid var(--border); }
+.cr-label { font-size: 13px; color: var(--text); }
+.cr-val { font-size: 18px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+.calc-note { font-size: 12px; color: var(--text-dim); margin-top: 6px; text-align: center; }
+.calc-note .limit-tag {
+  display: inline-block;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 10px;
+  padding: 1px 8px;
+  margin-left: 6px;
+  font-size: 11px;
+}
+
+/* ===== 规则速查弹窗（番数-役种 / 符数规则，页签切换） ===== */
+.modal.modal-help { max-width: 400px; }
+.help-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  background: var(--surface-alt);
+  border-radius: 10px;
+  padding: 4px;
+}
+.help-tab {
+  flex: 1;
+  padding: 8px 6px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+  text-align: center;
+  transition: background .12s ease, color .12s ease;
+}
+.help-tab.active {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+.help-scroll { max-height: 56vh; overflow-y: auto; padding-right: 2px; }
+.help-pane h4 {
+  margin: 14px 0 6px;
+  padding: 2px 8px;
+  background: var(--accent-light);
+  color: var(--accent);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.help-pane h4:first-child { margin-top: 2px; }
+.yaku-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--border);
+}
+.yaku-row:last-child { border-bottom: none; }
+.yaku-row .yk { font-size: 14px; color: var(--text-strong); font-weight: 500; white-space: nowrap; }
+.yaku-row .note { font-size: 12px; color: var(--text-dim); text-align: right; line-height: 1.4; }
+.fu-sec { margin-top: 12px; }
+.fu-sec-t { font-size: 13px; color: var(--accent); margin-bottom: 2px; }
+.fu-tbl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 6px 0;
+}
+.fu-cell {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.fu-cell span { color: var(--text); }
+.fu-cell b { color: var(--accent); font-size: 14px; }
+.help-foot { margin-top: 12px; text-align: center; }
+
+/* 立直棒指示：横放白色长条 + 中部红色圆点 */
+.seat .riichi-stick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 6px;
+  margin-top: 4px;
+  background: #ffffff;
+  border: 1px solid #9aa5a7;
+  border-radius: 3px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.18);
+}
+.seat .riichi-stick-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #e53935;
+  box-shadow: 0 0 0 0.5px rgba(0,0,0,.15);
+}
+
+/* 中心区：局数/本场/供托（层级收敛：局号从 24px 降到 16px，让位于座位卡分数） */
+.center-info {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%,-50%);
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 16px;
+  min-width: 120px;
+  box-shadow: var(--shadow-1);
+}
+.center-info .round { font-size: 16px; font-weight: 700; color: var(--accent); }
+.center-info .sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.center-info .honba { font-size: 12px; color: var(--text); }
+.center-info .kyotaku { font-size: 13px; color: var(--gold); font-weight: 700; margin-top: 4px; }
+
+/* ===== 操作面板 ===== */
+.actions {
+  max-width: 460px;
+  margin: 0 auto;
+  width: 100%;
+}
+.actions h3 { color: var(--accent); font-size: 15px; margin-bottom: 8px; text-align: center; letter-spacing: 2px; }
+.action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.action-grid .btn { padding: 13px 6px; font-size: 14px; margin-top: 0; } /* 覆盖 .btn + .btn 的 margin，grid 内由 gap 控制对齐 */
+.action-grid .btn.span2 { grid-column: span 2; }
+
+/* ===== 本半庄分数记录（可折叠） ===== */
+.round-log-card {
+  max-width: 460px;
+  margin: 14px auto 0;
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 14px;
+}
+.round-log-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.round-log-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 1px;
+}
+.round-log-count {
+  font-size: 12px;
+  color: var(--text-dim);
+  flex: 1;
+}
+.round-log-arrow {
+  display: inline-flex;
+  align-items: center;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-dim);
+  transition: transform .18s ease;
+}
+.round-log-card.collapsed .round-log-arrow { transform: rotate(-90deg); }
+.round-log-body {
+  margin-top: 8px;
+  max-height: 44vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.round-log-card.collapsed .round-log-body { display: none; }
+/* 空态提示 */
+.round-log-empty {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 10px 0 6px;
+}
+/* 每条已结算对局 */
+.rl-hand {
+  padding: 9px 0;
+  border-top: 1px dashed var(--border);
+}
+.rl-hand:first-of-type { border-top: none; }
+.rl-hand-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-strong);
+  margin-bottom: 5px;
+}
+.rl-hand-players {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 13px;
+  color: var(--text);
+}
+.rl-player-name { color: var(--text); }
+/* 逐局记录里的"本局立直"小标记：迷你立直棒（白条+红点），沿用桌面立直棒意象。
+   纯白卡片上白条易隐没，故用较深描边 + 轻投影保证在 13px 文字行里也看得清。 */
+.rl-player-riichi {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 6px;
+  margin-left: 4px;
+  vertical-align: middle;
+  background: #FFFFFF;
+  border: 1px solid #8A979E;
+  border-radius: 2px;
+  box-shadow: 0 1px 1.5px rgba(0,0,0,.14);
+}
+.rl-player-riichi-dot {
+  width: 3.5px;
+  height: 3.5px;
+  border-radius: 50%;
+  background: #E53935;
+}
+.rl-player-pts { color: var(--text-strong); font-weight: 700; margin-left: 3px; }
+.rl-player-delta { font-weight: 700; margin-left: 4px; }
+.rl-player-delta.up   { color: #1E9E63; }
+.rl-player-delta.down { color: var(--danger-text); } /* 13px 小字，用达标的深红 */
+.rl-player-delta.zero { color: var(--text-dim); font-weight: 500; }
+
+/* 历史详情里的分区标题（最终结果 / 逐局分数记录） */
+.detail-sec-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+/* ===== 弹窗（modal） ===== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 20px;
+}
+.modal-overlay.show { display: flex; }
+/* 确认弹窗需盖在其他弹窗之上（如历史详情弹窗之上再弹删除确认） */
+#modal-confirm { z-index: 300; }
+/* 番符表需盖在「和牌结算-填写分数」之上（该弹窗 DOM 靠后，同 z-index 时反而在上层），
+   故单独抬高；toast(200) 仍在其上 */
+#modal-calc { z-index: 150; }
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  max-width: 420px;
+  width: 100%;
+  padding: 18px;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-2);
+}
+.modal h3 { color: var(--accent); margin-bottom: 12px; font-size: 17px; text-align: center; }
+/* 关闭钮：44×44 触控热区（推荐最小目标），负 margin 抵消 padding 使字形仍在原位 */
+.modal .close-x {
+  float: right;
+  cursor: pointer;
+  font-size: 20px;
+  color: var(--text-dim);
+  width: 44px;
+  height: 44px;
+  margin: -12px -12px 0 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+/* 弹窗出现动画：仅"从主界面新开"时播削弱版淡入（无位移、scale .92→.97、时长压到 120ms）；
+   链内推进/叠层打开由 app.js 加 .instant 直接零动画，避免频繁切换晃眼 */
+.modal-overlay { --modal-dur: .12s; }
+.modal-overlay.show { animation: overlayIn var(--modal-dur) ease-out; }
+.modal-overlay.show .modal { animation: modalIn var(--modal-dur) ease-out; }
+.modal-overlay.show.instant,
+.modal-overlay.show.instant .modal { animation: none; }
+@keyframes overlayIn {
+  from { background: rgba(0,0,0,0); }
+  to   { background: rgba(0,0,0,.45); }
+}
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal-overlay.show,
+  .modal-overlay.show .modal { animation: none; }
+}
+
+/* ===== 骰子弹窗 ===== */
+.modal.modal-dice { max-width: 360px; text-align: center; }
+.dice-row {
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  margin: 20px 0 6px;
+}
+/* 骰子：参考图样式——圆角方块、粗黑边、3×3 点阵绘制点数 */
+/* 圆点用绝对定位贴向骰面边缘交叉点，拉开相邻圆点间距 */
+.die {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  background: #ffffff;
+  border: 3px solid #1f2629;
+  border-radius: 20px;
+  box-shadow: var(--shadow-2);
+  box-sizing: border-box;
+}
+.die .pip {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #1f2629;
+  transform: translate(-50%, -50%);
+  display: none;
+}
+/* 9 个交叉点位置（3×3 网格，圆点中心对齐交叉点，向内偏移确保圆点完全在骰子内且与边框留出距离） */
+.die .pip[data-i="0"] { left: 15%;  top: 15%; }
+.die .pip[data-i="1"] { left: 50%;  top: 15%; }
+.die .pip[data-i="2"] { left: 85%;  top: 15%; }
+.die .pip[data-i="3"] { left: 15%;  top: 50%; }
+.die .pip[data-i="4"] { left: 50%;  top: 50%; }
+.die .pip[data-i="5"] { left: 85%;  top: 50%; }
+.die .pip[data-i="6"] { left: 15%;  top: 85%; }
+.die .pip[data-i="7"] { left: 50%;  top: 85%; }
+.die .pip[data-i="8"] { left: 85%;  top: 85%; }
+/* 1点（红色 die）：中心 pip 改红色，参考图中"红点1"样式 */
+.die[data-val="1"] .pip {
+  background: #e53935;
+}
+/* 摇动动画：快速随机抖动 */
+.die.shaking { animation: diceShake .6s ease-in-out infinite; }
+@keyframes diceShake {
+  0%   { transform: rotate(-14deg) translate(-2px, -2px); }
+  25%  { transform: rotate(10deg)  translate(3px, 1px); }
+  50%  { transform: rotate(-8deg)  translate(-1px, 3px); }
+  75%  { transform: rotate(14deg)  translate(2px, -3px); }
+  100% { transform: rotate(-14deg) translate(-2px, -2px); }
+}
+.dice-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+.dice-actions .btn { min-width: 96px; }
+
+/* 玩家选择网格 */
+.player-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
+.player-pick .p {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  text-align: center;
+  cursor: pointer;
+}
+.player-pick .p.selected { border-color: var(--accent); background: var(--accent-soft); }
+.player-pick .p .wind { color: var(--accent); font-weight: 700; }
+.player-pick .p .pts { font-size: 14px; font-weight: 700; color: var(--text-strong); }
+/* 立直选人：已立直者分数下方显示立直棒（白条+红点），与桌面一致，无高亮 */
+.player-pick .p .riichi-stick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 6px;
+  margin-top: 8px;
+  background: #ffffff;
+  border: 1px solid #9aa5a7;
+  border-radius: 3px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.18);
+}
+.player-pick .p .riichi-stick .riichi-stick-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #e53935;
+  box-shadow: 0 0 0 0.5px rgba(0,0,0,.15);
+}
+
+/* 多选 */
+.player-pick.multi .p { border-style: dashed; }
+
+/* 结果/提示文字 */
+.notice {
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  margin: 10px 0;
+}
+.notice.warn { background: #FDF1EF; border: 1px solid #F0B6AC; color: var(--danger-text); }
+.notice.ok { background: #ECF7F0; border: 1px solid #B8DFC9; color: #1E9E63; }
+
+/* 数字输入大 */
+.num-input { font-size: 22px; text-align: center; font-weight: 700; }
+
+/* ===== 手动修正：局数九宫格 ===== */
+.round-grid { display: grid; gap: 8px; margin: 12px 0; }
+.round-cell {
+  padding: 12px 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-alt);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .12s;
+}
+.round-cell.cur { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.round-cell.selected { background: var(--accent); color: #fff; border-color: var(--accent-dark); }
+
+/* 快捷增减按钮（供托 ±1000） */
+.quick-step { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.quick-step .btn { margin-top: 0; padding: 10px; }
+
+/* ===== 历史列表 ===== */
+.list-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+.list-item .top { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-dim); }
+.list-item .mode { font-weight: 700; color: var(--accent); }
+.list-item .players { margin-top: 6px; font-size: 13px; color: var(--text); }
+.list-item .players b { color: var(--text-strong); }
+
+/* 顶部条 */
+.topbar { display: flex; align-items: center; justify-content: space-between; max-width: 460px; margin: 0 auto 6px; width: 100%; }
+.topbar .back { color: var(--accent); cursor: pointer; font-size: 14px; font-weight: 600; }
+.topbar .status { font-size: 12px; color: var(--text-dim); }
+
+/* 分栏滚动 */
+.scrollable { flex: 1; overflow-y: auto; }
+
+/* toast：移到底部（原顶部会压住桌面北家座位卡），并避开手势条 */
+#toast {
+  position: fixed;
+  top: auto;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%) translateY(120px);
+  background: rgba(21,95,61,.95);
+  color: #fff;
+  padding: 12px 20px;
+  border-radius: 14px;
+  font-size: 15px;
+  z-index: 200;
+  transition: transform .3s;
+  max-width: 90%;
+  text-align: center;
+  box-shadow: var(--shadow-2);
+}
+#toast.show { transform: translateX(-50%) translateY(0); }
+
+/* 结束横幅 */
+.end-banner {
+  background: rgba(217,79,61,.92);
+  border-radius: 14px;
+  padding: 12px;
+  text-align: center;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 12px;
+  max-width: 460px;
+  width: 100%;
+}
+
+/* 小提示 */
+.hint { font-size: 12px; color: var(--text-dim); text-align: center; margin-top: 8px; }
+
+/* ============ 联网对局卡片 ============ */
+.net-status {
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  margin: 4px 0 10px;
+  background: var(--surface-alt, #EDF4F0);
+  color: var(--accent);
+}
+.net-status.off { background: #f2f2f2; color: var(--text-dim); }
+.net-room {
+  background: var(--surface-alt, #EDF4F0);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.net-room-code { font-size: 15px; color: var(--text-strong); }
+.net-room-code b { color: var(--accent); font-size: 18px; }
+/* 房主扫码加入：二维码居中白底 + 下方完整链接 */
+.net-room-qr { text-align: center; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-strong); }
+.net-room-qr .qr-title { font-size: 13px; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
+.net-room-qr .qr-canvas { display: inline-block; background: #fff; border: 1px solid var(--border-strong); border-radius: 10px; padding: 8px; }
+.net-room-qr .qr-canvas canvas { display: block; }
+.net-room-qr .qr-url { font-size: 12px; color: var(--text); margin-top: 8px; word-break: break-all; }
+.net-room-meta { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+.net-join { display: flex; gap: 8px; align-items: center; }
+
+/* 加入他人对局：输入房主 IP → 以成员身份进入对方房间 */
+.net-joinroom {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border-strong);
+}
+.net-joinroom-label { font-size: 13px; font-weight: 700; color: var(--text-strong); margin-bottom: 8px; }
+.net-joinroom-row { display: flex; gap: 8px; align-items: stretch; }
+.net-joinroom-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  font-size: 16px;
+  color: var(--text);
+  background: var(--surface);
+}
+.net-joinroom-row input:focus { outline: none; border-color: var(--accent); }
+.net-joinroom-row .btn {
+  width: auto;
+  flex: 0 0 auto;
+  /* 与「扫码」用完全相同的盒模型，两者才真正同尺寸（都靠内容居中撑高） */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* ⚠️ 必须归零：两个按钮是相邻的 .btn 兄弟，.btn + .btn 的 margin-top:10px 会
+     把「扫码」顶下 10px，整行被撑高后拉伸不均，两按钮一高一矮（同 .action-grid 的坑） */
+  margin-top: 0;
+  padding: 10px 14px;
+  font-size: 15px;
+  white-space: nowrap;
+}
+/* 扫码按钮：只比「加入」多一个图标，其余尺寸与「加入」完全一致 */
+.net-joinroom-row .btn.btn-scan { gap: 4px; }
+.btn-scan .scan-ico { flex: 0 0 auto; display: block; }
+.net-joinroom-tip { font-size: 12px; line-height: 1.5; color: var(--text-dim); margin-top: 8px; }
+.net-joinroom-tip.warn { color: var(--danger-text); }
+.net-joinroom-tip.ok { color: var(--ok); }
+
+/* ===== 扫码弹窗（摄像头取景 + 逐帧解码） ===== */
+.modal.modal-scanqr { max-width: 360px; }
+.scan-view {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  max-height: 56vh;
+  margin: 4px 0 10px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #101614;         /* 摄像头未出流时的底色 */
+}
+.scan-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+/* 取景框：四角亮线，提示把二维码放进去 */
+.scan-frame {
+  position: absolute;
+  inset: 14%;
+  border-radius: 10px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, .28);
+  pointer-events: none;
+}
+.scan-frame::before,
+.scan-frame::after {
+  content: '';
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border: 3px solid #4ADE80;
+}
+.scan-frame::before { left: -1px; top: -1px; border-right: none; border-bottom: none; border-radius: 10px 0 0 0; }
+.scan-frame::after { right: -1px; bottom: -1px; border-left: none; border-top: none; border-radius: 0 0 10px 0; }
+.scan-status {
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+  min-height: 20px;
+}
+.scan-status.warn { color: var(--danger-text); }
+.scan-status.ok { color: var(--ok); }
+
+/* ============ 场风盘蓝牙控制（page-eink，2026-09-30） ============ */
+.eink-scan-list { margin-top: 10px; }
+.eink-scan-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; margin-top: 8px;
+  border: 1px solid var(--border); border-radius: 10px;
+  cursor: pointer; background: var(--card, #fff);
+}
+.eink-scan-item:active { opacity: .7; }
+.eink-scan-item .nm { font-size: 15px; font-weight: 700; }
+.eink-scan-item .meta { font-size: 13px; color: var(--text-dim); }
+.eink-tip {
+  margin-top: 10px; font-size: 13px; line-height: 1.6;
+  color: var(--text-dim);
+}
