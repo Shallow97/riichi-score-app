@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<!-- 场风盘推送页（独立页面，不在 APP 界面内，不影响任何测试断言）
+     用法（房主手机 Chrome）：http://127.0.0.1:8765/tag.html
+     预览模式（电脑浏览器即可看版式，无需蓝牙）：tag.html?demo=1
+     蓝牙推送页源码协议来自 tsl0922/EPD-nRF5（开源），详见 js/tagpush.js 头注释 -->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>场风盘 · e-ink 推送</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: sans-serif; background: #f0f0f0; padding: 12px; }
+  h1 { font-size: 16px; font-weight: 500; margin-bottom: 8px; }
+  #board { width: 100%; max-width: 600px; display: block; background: #fff;
+           border: 1px solid #999; image-rendering: pixelated; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+  button { padding: 8px 14px; font-size: 14px; border: 1px solid #888; background: #fff; border-radius: 6px; }
+  button:disabled { color: #aaa; }
+  #status { font-size: 13px; color: #333; }
+  #log { font-size: 12px; background: #fff; border: 1px solid #ccc; padding: 6px;
+         max-height: 140px; overflow-y: auto; white-space: pre-wrap; color: #444; }
+  label { font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>场风盘 · e-ink 推送（4.2寸三色 400×300）</h1>
+<canvas id="board" width="400" height="300"></canvas>
+<div class="row">
+  <button id="btn-ble">连接蓝牙</button>
+  <button id="btn-push" disabled>立即推送</button>
+  <label><input type="checkbox" id="opt-rot"> 竖屏推送（旋转90°）</label>
+  <label><input type="checkbox" id="opt-auto" checked> 收到结算自动推送</label>
+</div>
+<div class="row">
+  <span id="status">未连接</span>
+</div>
+<div id="log"></div>
+<script src="js/tagpush.js"></script>
+<script>
+(function () {
+  'use strict';
+  var canvas = document.getElementById('board');
+  var ctx = canvas.getContext('2d');
+  var logEl = document.getElementById('log');
+  var statusEl = document.getElementById('status');
+  var btnBle = document.getElementById('btn-ble');
+  var btnPush = document.getElementById('btn-push');
+  var optAuto = document.getElementById('opt-auto');
+  var optRot = document.getElementById('opt-rot');
+  var BLACK = '#000000', RED = '#ff0000', WHITE = '#ffffff';
+  var lastKey = '';
+  var currentGame = null;
+
+  function log(msg) {
+    var t = new Date();
+    var ts = ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2) + ':' + ('0' + t.getSeconds()).slice(-2);
+    logEl.textContent += '[' + ts + '] ' + msg + '\n';
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function setStatus(s) { statusEl.textContent = s; }
+
+  /* ---------------- 渲染（画布即最终屏显，颜色只用纯黑/纯红/纯白） ---------------- */
+
+  function fmt(n) { return n.toLocaleString('en-US'); }
+
+  function render(game) {
+    currentGame = game;
+    ctx.fillStyle = WHITE;
+    ctx.fillRect(0, 0, 400, 300);
+    if (!game) return;
+
+    // 顶栏：局号 + 本场 + 供托（右簇 measureText 右对齐，永不溢出）
+    ctx.fillStyle = BLACK;
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left';
+    if (game.over) {
+      ctx.font = 'bold 44px sans-serif';
+      ctx.fillText('终局', 16, 46);
+      ctx.font = '24px sans-serif';
+      ctx.fillStyle = '#555';
+      ctx.fillText((game.endReason || '').slice(0, 10), 130, 44);
+    } else {
+      ctx.font = 'bold 44px sans-serif';
+      ctx.fillText(game.round.wind + game.round.num + '局', 16, 46);
+      var sHonba = '本场' + game.honba;
+      var sKyotaku = game.kyotaku > 0 ? ('供托' + (game.kyotaku / 1000)) : '';
+      ctx.font = '26px sans-serif';
+      var wHonba = ctx.measureText(sHonba).width;
+      var wKyotaku = sKyotaku ? ctx.measureText(sKyotaku).width + 14 : 0;
+      var startX = 388 - wHonba - wKyotaku;
+      ctx.fillStyle = BLACK;
+      ctx.fillText(sHonba, startX, 42);
+      if (sKyotaku) { ctx.fillStyle = RED; ctx.fillText(sKyotaku, startX + wHonba + 14, 42); }
+    }
+    ctx.fillStyle = BLACK;
+    ctx.fillRect(12, 60, 376, 2);
+
+    // 四家格：2×2（三人模式留一空格）
+    var cells = [[12, 70], [212, 70], [12, 188], [212, 188]];
+    var players = game.players || [];
+    for (var i = 0; i < 4; i++) {
+      var p = players[i];
+      if (!p) continue;
+      var cx = cells[i][0], cy = cells[i][1];
+      var isDealer = p.wind === '东';   // 口径：东风位即庄家（用户定）
+      // 风位大字（庄家红）
+      ctx.fillStyle = isDealer ? RED : BLACK;
+      ctx.font = 'bold 52px sans-serif';
+      ctx.fillText(p.wind, cx + 18, cy + 52);
+      // 分数（右对齐；负分红）
+      ctx.fillStyle = p.points < 0 ? RED : BLACK;
+      ctx.font = 'bold 32px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(fmt(p.points), cx + 186, cy + 48);
+      ctx.textAlign = 'left';
+      // 名字
+      ctx.fillStyle = BLACK;
+      ctx.font = '20px sans-serif';
+      var nm = p.name || (p.seat + '家');
+      if (nm.length > 6) nm = nm.slice(0, 6);
+      ctx.fillText(nm, cx + 10, cy + 92);
+      // 立直棒（红；riichiBars 已含当次宣言，勿再加 p.riichi）
+      if (p.riichiBars > 0) {
+        ctx.fillStyle = RED;
+        ctx.font = 'bold 20px sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText('立直×' + p.riichiBars, cx + 186, cy + 92);
+        ctx.textAlign = 'left';
+      }
+      // 庄家角标（红三角，左上）
+      if (isDealer) {
+        ctx.fillStyle = RED;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + 16, cy);
+        ctx.lineTo(cx, cy + 16);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+    lastKey = stateKey(game);
+  }
+
+  function stateKey(g) {
+    if (!g) return '';
+    return g.round.wind + g.round.num + '|' + g.honba + '|' + g.kyotaku + '|' + g.over + '|' +
+      (g.players || []).map(function (p) {
+        return [p.wind, p.points, p.riichiBars, p.name].join(',');
+      }).join('|');
+  }
+
+  /* ---------------- 事件 ---------------- */
+
+  btnBle.addEventListener('click', async function () {
+    btnBle.disabled = true;
+    try {
+      var ok = await TagPush.connect();
+      btnPush.disabled = !ok;
+      btnBle.disabled = false;
+      if (ok) log('蓝牙已连接，等待结算广播…');
+    } catch (e) {
+      log('连接失败: ' + (e && e.message ? e.message : e));
+      btnBle.disabled = false;
+    }
+  });
+
+  btnPush.addEventListener('click', async function () {
+    if (!currentGame) { log('还没有画面数据'); return; }
+    try {
+      await TagPush.pushCanvas(canvas, optRot.checked);
+    } catch (e) {
+      log('推送失败: ' + (e && e.message ? e.message : e));
+    }
+  });
+
+  async function maybeAutoPush(game) {
+    if (!optAuto.checked) return;
+    var k = stateKey(game);
+    if (k === lastPushedKey) return;
+    lastPushedKey = k;
+    if (!TagPush.state.connected) { log('（蓝牙未连接，跳过自动推送）'); return; }
+    log('检测到结算变化，自动推送…');
+    try { await TagPush.pushCanvas(canvas, optRot.checked); }
+    catch (e) { log('自动推送失败: ' + (e && e.message ? e.message : e)); }
+  }
+  var lastPushedKey = '';
+
+  /* ---------------- 启动 ---------------- */
+
+  TagPush_listen();
+  function TagPush_listen() {
+    TagPush.listenState(
+      function (stateStr) {
+        var game = null;
+        try { game = (typeof stateStr === 'string') ? JSON.parse(stateStr) : stateStr; } catch (e) { return; }
+        render(game);
+        maybeAutoPush(game);
+      },
+      function (s) {
+        if (s === 'connected') log('已连接对局服务器（只听模式）');
+      }
+    );
+  }
+
+  window.addEventListener('error', function (e) { window.__err = e.message; });
+
+  var params = new URLSearchParams(location.search);
+  if (params.has('demo')) {
+    render(DEMO_GAME());
+    document.getElementById('board').__rendered = true;
+    log('演示模式：显示假数据，不出现在真实对局中');
+  } else {
+    log('等待对局服务器 state 广播…（无画面为正常，开局后自动出现）');
+  }
+
+  function DEMO_GAME() {
+    return {
+      mode: 4,
+      players: [
+        { seat: '东', wind: '东', name: '小立', points: 38200, riichi: false, riichiBars: 0 },
+        { seat: '南', wind: '南', name: '阿茂', points: 24600, riichi: false, riichiBars: 1 },
+        { seat: '西', wind: '西', name: '豆沙包', points: 27300, riichi: true, riichiBars: 2 },
+        { seat: '北', wind: '北', name: '小鱼', points: -900, riichi: false, riichiBars: 0 },
+      ],
+      opts: { westRule: false, multiRon: false, dealerName: '小立' },
+      dealerIndex: 0,
+      round: { wind: '东', num: 3 },
+      honba: 2,
+      kyotaku: 3000,
+      gameWind: '东',
+      over: false,
+      endReason: '',
+      history: [],
+    };
+  }
+})();
+</script>
+</body>
+</html>
