@@ -108,21 +108,32 @@
     ctx.rotate(angle);
     ctx.textBaseline = 'alphabetic';
     ctx.textAlign = 'left';
-    var windSize = wide ? 46 : 38, scoreSize = wide ? 34 : 26;
-    // 风位大字（当前风位，东红其余黑）
-    ctx.fillStyle = (p.wind === '东') ? RED : BLACK;
-    ctx.font = 'bold ' + windSize + 'px sans-serif';
-    ctx.fillText(p.wind, -L / 2 + 12, -H / 2 + windSize + 8);
-    // 分数（右对齐，负分红）
-    ctx.fillStyle = p.points < 0 ? RED : BLACK;
-    ctx.font = 'bold ' + scoreSize + 'px sans-serif';
-    ctx.textAlign = 'right';
-    ctx.fillText(fmt(p.points), L / 2 - 12, -H / 2 + scoreSize + 12);
-    ctx.textAlign = 'left';
+    var windSize = wide ? 46 : 34, scoreSize = wide ? 34 : 24;
+    if (wide) {
+      // 长边（400 宽）：风位左、分数右
+      ctx.fillStyle = (p.wind === '东') ? RED : BLACK;
+      ctx.font = 'bold ' + windSize + 'px sans-serif';
+      ctx.fillText(p.wind, -L / 2 + 12, -H / 2 + windSize + 8);
+      ctx.fillStyle = p.points < 0 ? RED : BLACK;
+      ctx.font = 'bold ' + scoreSize + 'px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(fmt(p.points), L / 2 - 12, -H / 2 + scoreSize + 12);
+      ctx.textAlign = 'left';
+    } else {
+      // 短边（140 宽）：风位与分数上下堆叠居中（横排会挤在一起）
+      ctx.textAlign = 'center';
+      ctx.fillStyle = (p.wind === '东') ? RED : BLACK;
+      ctx.font = 'bold ' + windSize + 'px sans-serif';
+      ctx.fillText(p.wind, 0, -H / 2 + windSize + 10);
+      ctx.fillStyle = p.points < 0 ? RED : BLACK;
+      ctx.font = 'bold ' + scoreSize + 'px sans-serif';
+      ctx.fillText(fmt(p.points), 0, H / 2 - 26);
+      ctx.textAlign = 'left';
+    }
     // 立直显示区：当前宣言立直状态（与 APP 主界面同口径 p.riichi，
     // 结算后自动清空；勿用 p.riichiBars——那是供托池记账字段，终局后不归零）
     if (p.riichi) {
-      var sw = 56, sh = 14, cy = H / 2 - 20, sx = -sw / 2;
+      var sw = 56, sh = 14, cy = H / 2 - (wide ? 20 : 10), sx = -sw / 2;
       ctx.fillStyle = WHITE;
       stickPath(sx, cy - sh / 2, sw, sh, sh / 2);
       ctx.fill();
@@ -229,7 +240,6 @@
 
   /* ---------------- 启动 ---------------- */
 
-  TagPush_listen();
   function TagPush_listen() {
     TagPush.listenState(
       function (stateStr) {
@@ -247,11 +257,13 @@
   window.addEventListener('error', function (e) { window.__err = e.message; });
 
   var params = new URLSearchParams(location.search);
-  if (params.has('demo')) {
+  var isDemo = params.has('demo');
+  if (isDemo) {
     render(DEMO_GAME());
     document.getElementById('board').__rendered = true;
-    log('演示模式：显示假数据，不出现在真实对局中');
+    log('演示模式：显示假数据，不出现在真实对局中（不连服务器）');
   } else {
+    TagPush_listen();
     log('等待对局服务器 state 广播…（无画面为正常，开局后自动出现）');
   }
 
