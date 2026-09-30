@@ -138,8 +138,8 @@ public final class EinkTagRenderer {
 
     // ============ 渲染 ============
 
-    /** 渲染 400×300 三色位图（纯黑/纯红/纯白） */
-    public static android.graphics.Bitmap render(TagData d) {
+    /** 渲染 400×300 位图（纯黑/纯红/纯白）。bwMode=true 时无红色：庄家反白块、其余红元素转黑 */
+    public static android.graphics.Bitmap render(TagData d, boolean bwMode) {
         android.graphics.Bitmap bmp = android.graphics.Bitmap.createBitmap(W, H, android.graphics.Bitmap.Config.ARGB_8888);
         Canvas ctx = new Canvas(bmp);
         ctx.drawColor(WHITE);
@@ -153,7 +153,7 @@ public final class EinkTagRenderer {
         for (int i = 0; i < n; i++) {
             float[] edge = edgeFor(d.mode, d.seats[i]);
             if (edge == null) continue;
-            drawEdge(ctx, p, d, i, edge[0], edge[1], edge[2], edge[3], edge[4]);
+            drawEdge(ctx, p, d, i, bwMode, edge[0], edge[1], edge[2], edge[3], edge[4]);
         }
 
         // 中央信息板
@@ -189,7 +189,7 @@ public final class EinkTagRenderer {
             p.setColor(BLACK);
             ctx.drawText(sHonba, sx, 184, p);
             if (!sKyotaku.isEmpty()) {
-                p.setColor(RED);
+                p.setColor(bwMode ? BLACK : RED);
                 ctx.drawText(sKyotaku, sx + w1 + (p.getTextSize() == 20 ? 14 : 12), 184, p);
             }
         }
@@ -206,7 +206,7 @@ public final class EinkTagRenderer {
     }
 
     /** 画一条边（本地坐标：translate 到中心 + rotate；L=阅读方向宽，H=竖直高） */
-    private static void drawEdge(Canvas ctx, Paint p, TagData d, int idx,
+    private static void drawEdge(Canvas ctx, Paint p, TagData d, int idx, boolean bw,
                                  float rx, float ry, float rw, float rh, float angleDeg) {
         boolean wide = (angleDeg == 0 || Math.abs(angleDeg) > 2);
         float L = wide ? rw : rh, Hh = wide ? rh : rw;
@@ -217,13 +217,12 @@ public final class EinkTagRenderer {
         String wind = d.winds[idx] == null ? "" : d.winds[idx];
         String pts = fmt(d.points[idx]);
         int windSize = 46, scoreSize = 34;
+        boolean dealer = "东".equals(wind);
 
         if (wide) {
             // 长边：风位左、分数右
-            p.setColor("东".equals(wind) ? RED : BLACK);
-            p.setTextSize(windSize);
-            ctx.drawText(wind, -L / 2f + 12, -Hh / 2f + windSize + 8, p);
-            p.setColor(d.points[idx] < 0 ? RED : BLACK);
+            drawWind(ctx, p, wind, dealer, bw, -L / 2f + 12, -Hh / 2f + windSize + 8, windSize, false);
+            p.setColor(d.points[idx] < 0 && !bw ? RED : BLACK);
             p.setTextSize(scoreSize);
             if (p.measureText(pts) > L - 24) p.setTextSize(28);
             p.setTextAlign(Paint.Align.RIGHT);
@@ -232,10 +231,8 @@ public final class EinkTagRenderer {
         } else {
             // 短边：风位与分数上下堆叠居中
             p.setTextAlign(Paint.Align.CENTER);
-            p.setColor("东".equals(wind) ? RED : BLACK);
-            p.setTextSize(windSize);
-            ctx.drawText(wind, 0, -Hh / 2f + windSize + 8, p);
-            p.setColor(d.points[idx] < 0 ? RED : BLACK);
+            drawWind(ctx, p, wind, dealer, bw, 0, -Hh / 2f + windSize + 8, windSize, true);
+            p.setColor(d.points[idx] < 0 && !bw ? RED : BLACK);
             p.setTextSize(scoreSize);
             if (p.measureText(pts) > L - 12) p.setTextSize(28);
             ctx.drawText(pts, 0, Hh / 2f - 26, p);
@@ -253,10 +250,27 @@ public final class EinkTagRenderer {
             p.setStyle(Paint.Style.STROKE);
             ctx.drawRoundRect(-sw / 2f, cy - sh / 2f, sw / 2f, cy + sh / 2f, r, r, p);
             p.setStyle(Paint.Style.FILL);
-            p.setColor(RED);
+            p.setColor(bw ? BLACK : RED);   // 快刷模式中心点黑（红通道不显）
             ctx.drawCircle(0, cy, 4.5f, p);
         }
         ctx.restore();
+    }
+
+    /** 风位大字：三色=庄家红字；黑白快刷=庄家反白块（黑底白字） */
+    private static void drawWind(Canvas ctx, Paint p, String wind, boolean dealer, boolean bw,
+                                 float x, float y, int size, boolean centered) {
+        p.setTextSize(size);
+        if (dealer && bw) {
+            float tw = p.measureText(wind);
+            float left = centered ? -tw / 2f - 7 : x - 7;
+            p.setColor(BLACK);
+            p.setStyle(Paint.Style.FILL);
+            ctx.drawRect(left, y - size + 6, left + tw + 14, y + 14, p);
+            p.setColor(WHITE);
+        } else {
+            p.setColor(dealer ? RED : BLACK);
+        }
+        ctx.drawText(wind, x, y, p);
     }
 
     private static String fmt(int v) {

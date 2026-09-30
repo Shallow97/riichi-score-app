@@ -6,6 +6,8 @@
      布局（用户定稿 2026-09-30）：
        - 屏中间：局号（东1局）/ 本场数（0本场）/ 场供（场供1000，实际点数）
        - 屏四边：每边一位玩家 = 风位（东红其余黑）+ 分数 + 立直显示区（立直棒中心红点）
+       - 黑白快刷模式（默认开，用户定 2026-09-30 优先低延时）：庄家"东"改反白块，
+         红→黑；三色全刷可随时切回（快刷序列见 js/tagpush.js 头注释）
        - 边位跟玩家静态座位（seat）绑定，开局定死：四人 东下/南右/西上/北左（逆时针）；
          三人（座位东南西）东下/南右/西左，上方固定留空
        - 红色"东"（庄家）随轮庄在四边迁移，起始在下方 -->
@@ -37,6 +39,7 @@
   <button id="btn-push" disabled>立即推送</button>
   <label><input type="checkbox" id="opt-rot"> 竖屏推送（旋转90°）</label>
   <label><input type="checkbox" id="opt-auto" checked> 收到结算自动推送</label>
+  <label><input type="checkbox" id="opt-bw" checked> 黑白快刷（2-3秒，无红色）</label>
 </div>
 <div class="row">
   <span id="status">未连接</span>
@@ -99,10 +102,27 @@
     ctx.closePath();
   }
 
+  function drawWind(p, x, y, size, centered) {
+    ctx.font = 'bold ' + size + 'px sans-serif';
+    if (p.wind === '东' && TagPush.isFastMode()) {
+      // 黑白快刷：庄家用反白块（黑底白字）替代红字
+      var tw = ctx.measureText(p.wind).width;
+      var rx = centered ? -tw / 2 - 7 : x - 7;
+      ctx.fillStyle = BLACK;
+      ctx.fillRect(rx, y - size + 6, tw + 14, size + 8);
+      ctx.fillStyle = WHITE;
+      ctx.fillText(p.wind, x, y);
+    } else {
+      ctx.fillStyle = (p.wind === '东') ? RED : BLACK;
+      ctx.fillText(p.wind, x, y);
+    }
+  }
+
   function drawEdge(p, rect, angle) {
     var w = rect[2], h = rect[3];
     var wide = (angle === 0 || Math.abs(angle) > 2); // 上下长边 / 左右短边
     var L = wide ? w : h, H = wide ? h : w;          // 本地坐标：L=阅读方向宽，H=竖直高
+    var bw = TagPush.isFastMode();
     ctx.save();
     ctx.translate(rect[0] + w / 2, rect[1] + h / 2);
     ctx.rotate(angle);
@@ -111,10 +131,8 @@
     var windSize = 46, scoreSize = 34; // 四边统一字号（用户定）
     if (wide) {
       // 长边（400 宽）：风位左、分数右
-      ctx.fillStyle = (p.wind === '东') ? RED : BLACK;
-      ctx.font = 'bold ' + windSize + 'px sans-serif';
-      ctx.fillText(p.wind, -L / 2 + 12, -H / 2 + windSize + 8);
-      ctx.fillStyle = p.points < 0 ? RED : BLACK;
+      drawWind(p, -L / 2 + 12, -H / 2 + windSize + 8, windSize, false);
+      ctx.fillStyle = (p.points < 0 && !bw) ? RED : BLACK;
       ctx.font = 'bold ' + scoreSize + 'px sans-serif';
       if (ctx.measureText(fmt(p.points)).width > L - 24) ctx.font = 'bold 28px sans-serif';
       ctx.textAlign = 'right';
@@ -123,10 +141,8 @@
     } else {
       // 短边（120 宽条）：风位与分数上下堆叠居中（横排会挤在一起）
       ctx.textAlign = 'center';
-      ctx.fillStyle = (p.wind === '东') ? RED : BLACK;
-      ctx.font = 'bold ' + windSize + 'px sans-serif';
-      ctx.fillText(p.wind, 0, -H / 2 + windSize + 8);
-      ctx.fillStyle = p.points < 0 ? RED : BLACK;
+      drawWind(p, 0, -H / 2 + windSize + 8, windSize, true);
+      ctx.fillStyle = (p.points < 0 && !bw) ? RED : BLACK;
       ctx.font = 'bold ' + scoreSize + 'px sans-serif';
       if (ctx.measureText(fmt(p.points)).width > L - 12) ctx.font = 'bold 28px sans-serif';
       ctx.fillText(fmt(p.points), 0, H / 2 - 26);
@@ -142,7 +158,7 @@
       ctx.lineWidth = 2;
       ctx.strokeStyle = BLACK;
       ctx.stroke();
-      ctx.fillStyle = RED;
+      ctx.fillStyle = bw ? BLACK : RED;   // 快刷模式中心点黑（红通道不显）
       ctx.beginPath();
       ctx.arc(sx + sw / 2, cy, 4.5, 0, Math.PI * 2);
       ctx.fill();
@@ -189,7 +205,7 @@
       ctx.textAlign = 'left';
       ctx.fillStyle = BLACK;
       ctx.fillText(sHonba, sx, 184);
-      if (sKyotaku) { ctx.fillStyle = RED; ctx.fillText(sKyotaku, sx + w1 + 14, 184); }
+      if (sKyotaku) { ctx.fillStyle = TagPush.isFastMode() ? BLACK : RED; ctx.fillText(sKyotaku, sx + w1 + 14, 184); }
       ctx.textAlign = 'center';
     }
     ctx.textAlign = 'left';
@@ -260,6 +276,18 @@
 
   var params = new URLSearchParams(location.search);
   var isDemo = params.has('demo');
+  // 快刷模式：?bw=0/1 强制，否则读 localStorage（默认开——用户定：优先低延时）
+  var optBw = document.getElementById('opt-bw');
+  var bwInit = params.has('bw') ? (params.get('bw') !== '0')
+                                : (function () { try { return localStorage.getItem('tag_bw') !== '0'; } catch (e) { return true; } })();
+  optBw.checked = bwInit;
+  TagPush.setFastMode(bwInit);
+  optBw.addEventListener('change', function () {
+    TagPush.setFastMode(optBw.checked);
+    try { localStorage.setItem('tag_bw', optBw.checked ? '1' : '0'); } catch (e) {}
+    if (currentGame) render(currentGame);
+    log('快刷模式：' + (optBw.checked ? '开（黑白 2-3 秒，无红色）' : '关（三色全刷约 15 秒）'));
+  });
   if (isDemo) {
     render(DEMO_GAME());
     document.getElementById('board').__rendered = true;

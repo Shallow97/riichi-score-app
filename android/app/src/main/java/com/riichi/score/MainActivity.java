@@ -288,6 +288,17 @@ public class MainActivity extends Activity {
             EinkBoardManager.getInstance().setBleAlwaysOn(on);
         }
 
+        /** 黑白快刷开关（默认开；关闭=三色全刷） */
+        @android.webkit.JavascriptInterface
+        public void einkSetFastMode(boolean on) {
+            EinkBoardManager.getInstance().setFastMode(on);
+        }
+
+        @android.webkit.JavascriptInterface
+        public boolean einkIsFastMode() {
+            return EinkBoardManager.getInstance().isFastMode();
+        }
+
         /** 是否已记住设备 */
         @android.webkit.JavascriptInterface
         public boolean einkHasSaved() {

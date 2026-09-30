@@ -2372,6 +2372,22 @@
       sw.classList.toggle('on', turningOn); // 乐观更新，设备回报（ble=）会纠正
       bridge.einkSetAlwaysOn(turningOn);
     });
+
+    // 黑白快刷开关（默认开，用户定：优先低延时；本地记忆，无蓝牙也能切）
+    const swFast = $('#switch-eink-fast');
+    if (window.NativeBridge && window.NativeBridge.einkIsFastMode) {
+      swFast.classList.toggle('on', window.NativeBridge.einkIsFastMode());
+    }
+    swFast.addEventListener('click', () => {
+      const turningOn = !swFast.classList.contains('on');
+      swFast.classList.toggle('on', turningOn);
+      if (window.NativeBridge && window.NativeBridge.einkSetFastMode) {
+        window.NativeBridge.einkSetFastMode(turningOn);
+      } else {
+        toast('此功能需在 APP 内使用');
+        swFast.classList.toggle('on', !turningOn);
+      }
+    });
   }
 
   function bindAll() {
@@ -2436,9 +2452,9 @@
       );
     });
 
-    // 开关组件（蓝牙常开开关在下方单独绑定，需发命令+校验连接）
+    // 开关组件（蓝牙常开/快刷开关在下方单独绑定，需发命令+校验连接）
     document.querySelectorAll('.switch').forEach((sw) => {
-      if (sw.id === 'switch-eink-always') return; // 跳过，见 bindEinkPage
+      if (sw.id === 'switch-eink-always' || sw.id === 'switch-eink-fast') return; // 跳过，见 bindEinkPage
       sw.addEventListener('click', () => sw.classList.toggle('on'));
     });
 

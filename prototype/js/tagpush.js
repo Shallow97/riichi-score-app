@@ -28,6 +28,25 @@
     SET_CONFIG: 0x90, SYS_RESET: 0x91, SYS_SLEEP: 0x92, CFG_ERASE: 0x99,
   };
 
+  /* 模型 ID（EPD_driver.h epd_model_id_t）：快刷模式用 BW 模型让固件按黑白初始化 */
+  const MODEL_UC8176_420_BW  = 0x01;
+  const MODEL_UC8176_420_BWR = 0x03;
+
+  /* ---------------- 黑白快刷（3 色屏当黑白屏用，15s → 2-3s） ----------------
+   * 依据：EPD-nRF5 docs/README.md「bw.txt」LUT 组 + 固件 UC8176 BW 模型初始化值。
+   * 序列：INIT(model=0x01) → 透传写 PSR(0x3F)/CDI(0x97) + 5 张 LUT 寄存器
+   *       → WRITE_IMG 只发 1 张黑白面（固件 BW 模型把数据写进 DTM2）→ REFRESH
+   * ⚠️ BWR 面板 OTP 里是三色慢波形，PSR bit5(LUT_SEL)=1 让 DRF 用寄存器 LUT；
+   *    若实机快刷未生效或花屏，先调 PSR_BW 这一个字节（0x3F↔0x1F），无损可回退。
+   */
+  const PSR_BW = 0x3F;   // 0x1F(固件 BW 模型值) | 0x20(LUT_SEL=寄存器)
+  const CDI_BW = 0x97;   // 固件 BW 模型值（UC81xx.c default 分支）
+  const BW_LUTC  = [0x00,0x28,0x28,0x00,0x00,0x01, 0x60,0x32,0x32,0x00,0x00,0x02, 0x00,0x14,0x00,0x00,0x00,0x01, 0x00,0x32,0x32,0x00,0x00,0x01, 0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x28,0x00, 0x00,0x00];
+  const BW_LUTWW = [0x50,0x28,0x32,0x00,0x00,0x01, 0x90,0x32,0x00,0x00,0x00,0x02, 0x40,0x14,0x32,0x00,0x00,0x01, 0xA0,0x32,0x00,0x00,0x00,0x01, 0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x28,0x00,0x00,0x00];
+  const BW_LUTBW = [0x50,0x28,0x32,0x00,0x00,0x01, 0x90,0x32,0x00,0x00,0x00,0x02, 0x40,0x14,0x32,0x00,0x00,0x01, 0xA0,0x32,0x00,0x00,0x00,0x01, 0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x28,0x00,0x00,0x00];
+  const BW_LUTWB = [0xA0,0x28,0x32,0x00,0x00,0x01, 0x90,0x32,0x00,0x00,0x00,0x02, 0x80,0x14,0x32,0x00,0x00,0x01, 0x50,0x32,0x00,0x00,0x00,0x01, 0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x28,0x00,0x00,0x00];
+  const BW_LUTBB = [0xA0,0x28,0x32,0x00,0x00,0x01, 0x90,0x32,0x00,0x00,0x00,0x02, 0x80,0x14,0x32,0x00,0x00,0x01, 0x50,0x32,0x00,0x00,0x00,0x01, 0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0xFF,0x00,0x00,0x00];
+
   /* ---------------- RLE（与官方 rle.js 逐字节一致） ---------------- */
 
   function rleCompress(data, maxLiteralSize) {
@@ -87,6 +106,7 @@
     device: null, gatt: null, char: null,
     msgIndex: 0, mtu: 20, rleSupport: false, appVersion: 0x16,
     connected: false, reconnectTimer: null,
+    bwMode: true,   // 黑白快刷：默认开（用户定：优先低延时）；关闭走三色全刷
   };
   let logFn = function () {};
   let statusFn = function () {};
@@ -173,7 +193,7 @@
     }
     st.connected = true;
     statusFn('connected');
-    await write(EpdCmd.INIT);
+    await write(EpdCmd.INIT, st.bwMode ? [MODEL_UC8176_420_BW] : null);
     scheduleWatchdog();
     return true;
   }
@@ -248,6 +268,44 @@
     return { bw: bw, red: red };
   }
 
+  /* 黑白量化：单张 1bpp（红像素灰度 ~106-120 < 140，自然落黑） */
+  function quantizeBW(imageData) {
+    const width = imageData.width;
+    const height = imageData.height;
+    const data = imageData.data;
+    const byteWidth = Math.ceil(width / 8);
+    const mono = new Uint8Array(height * byteWidth);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const index = (y * width + x) * 4;
+        const grayscale = Math.round(
+          0.299 * data[index] + 0.587 * data[index + 1] + 0.114 * data[index + 2]);
+        if (grayscale >= 140) mono[y * byteWidth + Math.floor(x / 8)] |= (0x01 << (7 - (x % 8)));
+      }
+    }
+    return mono;
+  }
+
+  /* ---------------- 黑白快刷寄存器写入（透传 SEND_CMD/SEND_DATA） ---------------- */
+
+  async function applyBWRegisters() {
+    // PSR：黑白模式 + LUT 从寄存器取（BWR 面板 OTP 是三色慢波形，必须换源）
+    await write(EpdCmd.SEND_CMD, [0x00]);
+    await write(EpdCmd.SEND_DATA, [PSR_BW]);
+    // CDI：固件 BW 模型值
+    await write(EpdCmd.SEND_CMD, [0x50]);
+    await write(EpdCmd.SEND_DATA, [CDI_BW]);
+    // 5 张 LUT（bw.txt）：VCOM/WW/BW/WB/BB —— 同一寄存器下可连续 SEND_DATA 分块
+    const tables = [[0x20, BW_LUTC], [0x21, BW_LUTWW], [0x22, BW_LUTBW], [0x23, BW_LUTWB], [0x24, BW_LUTBB]];
+    for (const [reg, lut] of tables) {
+      await write(EpdCmd.SEND_CMD, [reg]);
+      const chunkSize = Math.max(st.mtu - 1, 20);   // SEND_DATA 载荷 = mtu-1 字节
+      for (let i = 0; i < lut.length; i += chunkSize) {
+        await write(EpdCmd.SEND_DATA, lut.slice(i, i + chunkSize));
+      }
+    }
+  }
+
   /* ---------------- 推图 ---------------- */
 
   async function writeImage(data, step) {
@@ -294,13 +352,23 @@
       src = tmp;
     }
     const imageData = src.getContext('2d').getImageData(0, 0, src.width, src.height);
-    const planes = quantizeThreeColor(imageData);
     statusFn('推送中...');
-    await write(EpdCmd.INIT);
-    await writeImage(planes.bw, 'bw');
-    await writeImage(planes.red, 'red');
-    await write(EpdCmd.REFRESH);
-    statusFn('推送完成');
+    if (st.bwMode) {
+      // 黑白快刷：每次推送都重走 INIT+寄存器（固件深睡会重置寄存器，且模式切换即时生效）
+      await write(EpdCmd.INIT, [MODEL_UC8176_420_BW]);
+      await applyBWRegisters();
+      const mono = quantizeBW(imageData);
+      await writeImage(mono, 'bw');
+      await write(EpdCmd.REFRESH);
+    } else {
+      // 三色全刷：INIT 重置所有寄存器，bw 模式残留的 PSR/LUT 一并还原
+      await write(EpdCmd.INIT, [MODEL_UC8176_420_BWR]);
+      const planes = quantizeThreeColor(imageData);
+      await writeImage(planes.bw, 'bw');
+      await writeImage(planes.red, 'red');
+      await write(EpdCmd.REFRESH);
+    }
+    statusFn('推送完成' + (st.bwMode ? '（黑白快刷）' : ''));
   }
 
   /* ---------------- 最小 WS 监听（哑终端，只听不发言） ---------------- */
@@ -335,6 +403,9 @@
     pushCanvas: pushCanvas,
     listenState: listenState,
     quantizeThreeColor: quantizeThreeColor,
+    quantizeBW: quantizeBW,
+    setFastMode(on) { st.bwMode = !!on; },
+    isFastMode() { return st.bwMode; },
     rleCompress: rleCompress,
     rleCompressMTU: rleCompressMTU,
     state: st,

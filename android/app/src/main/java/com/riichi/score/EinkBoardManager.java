@@ -34,8 +34,11 @@ import java.util.UUID;
  *  - 连接后第 1 条 notify = 设备自报配置；之后文本 "mtu=N"（rle=1 忽略，不压缩）；
  *    "ble=0/1" = 蓝牙常开状态回报（epd-noclock 扩展）
  *  - BLE_ALWAYS(0x25)+1字节 = 蓝牙常开设置（存设备 flash，断电有效）
- *  - 传图：INIT(0x01) → WRITE_IMG(0x30) 黑白面 → 红面 → REFRESH(0x05)
- *    无 RLE 标志位：黑白首块 0x0F / 后续 0xFF，红面首块 0x00 / 后续 0xF0
+ *  - 传图：INIT(0x01[,model]) → WRITE_IMG(0x30) 黑白面 → 红面 → REFRESH(0x05)
+ *    非压缩标志位（固件 EPD_service.c 解析）：bit0=0 黑/1 红，bit1=1 首块，bit2=1 RLE
+ *    → 黑面首块 0x02/后续 0x00，红面首块 0x03/后续 0x01
+ *  - 黑白快刷（isFastMode）：INIT 带 model=0x01 → 透传 SEND_CMD(0x03)/SEND_DATA(0x04)
+ *    写 PSR/CDI/LUT → 单张黑白面 → REFRESH（详见 PSR_BW 注释）
  *  - 位图 1bpp：byteWidth=ceil(w/8)、MSB 在前、1=白 0=黑（红面 0=红）；块数据 = mtu-2 字节
  *
  * 线程模型：所有 GATT 操作在专用 HandlerThread 上执行；渲染在工作线程；
@@ -54,9 +57,25 @@ public class EinkBoardManager {
     private static final UUID CCCD       = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
 
     private static final int CMD_INIT = 0x01, CMD_WRITE_IMG = 0x30, CMD_REFRESH = 0x05, CMD_BLE_ALWAYS = 0x25;
+    private static final int CMD_SEND_CMD = 0x03, CMD_SEND_DATA = 0x04;   // 原始透传（寄存器写入用）
     private static final long THROTTLE_MS = 10_000;   // 自动推送节流
     private static final long SCAN_PERIOD_MS = 6_000; // 扫描时长
     private static final int MAX_RECONNECT = 5;
+
+    /* 模型 ID（EPD_driver.h）：快刷用 BW 模型让固件按黑白初始化（PSR 0x1F/CDI 0x97） */
+    private static final int MODEL_UC8176_420_BW = 0x01, MODEL_UC8176_420_BWR = 0x03;
+
+    /* ---------------- 黑白快刷（3 色屏当黑白屏，15s → 2-3s，与 tagpush.js 同源） ----------------
+     * 依据：EPD-nRF5 docs/README.md「bw.txt」LUT 组。序列：INIT(model=0x01) →
+     * 透传写 PSR(0x3F)/CDI(0x97) + 5 张 LUT 寄存器 → 单张黑白面 → REFRESH。
+     * ⚠️ BWR 面板 OTP 是三色慢波形，PSR bit5(LUT_SEL)=1 让 DRF 用寄存器 LUT；
+     *    实机若快刷未生效或花屏，先调 PSR_BW 一个字节（0x3F↔0x1F），无损可回退。 */
+    private static final int PSR_BW = 0x3F, CDI_BW = 0x97;
+    private static final byte[] BW_LUTC  = {0x00,0x28,0x28,0x00,0x00,0x01, 0x60,0x32,0x32,0x00,0x00,0x02, 0x00,0x14,0x00,0x00,0x00,0x01, 0x00,0x32,0x32,0x00,0x00,0x01, 0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x28,0x00, 0x00,0x00};
+    private static final byte[] BW_LUTWW = {0x50,0x28,0x32,0x00,0x00,0x01, (byte)0x90,0x32,0x00,0x00,0x00,0x02, 0x40,0x14,0x32,0x00,0x00,0x01, (byte)0xA0,0x32,0x00,0x00,0x00,0x01, 0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x28,0x00,0x00,0x00};
+    private static final byte[] BW_LUTBW = {0x50,0x28,0x32,0x00,0x00,0x01, (byte)0x90,0x32,0x00,0x00,0x00,0x02, 0x40,0x14,0x32,0x00,0x00,0x01, (byte)0xA0,0x32,0x00,0x00,0x00,0x01, 0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x28,0x00,0x00,0x00};
+    private static final byte[] BW_LUTWB = {(byte)0xA0,0x28,0x32,0x00,0x00,0x01, (byte)0x90,0x32,0x00,0x00,0x00,0x02, (byte)0x80,0x14,0x32,0x00,0x00,0x01, 0x50,0x32,0x00,0x00,0x00,0x01, 0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x28,0x00,0x00,0x00};
+    private static final byte[] BW_LUTBB = {(byte)0xA0,0x28,0x32,0x00,0x00,0x01, 0x10,0x32,0x00,0x00,0x00,0x02, (byte)0x80,0x14,0x32,0x00,0x00,0x01, 0x50,0x32,0x00,0x00,0x00,0x01, 0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,(byte)0xFF,0x00,0x00,0x00};
 
     private static volatile EinkBoardManager sInstance;
 
@@ -98,7 +117,8 @@ public class EinkBoardManager {
 
     // 推送任务（onCharacteristicWrite 回调驱动下一块）
     private static class PushJob {
-        byte[][] chunks;   // 全部块（含标志字节）
+        byte[][] chunks;   // 全部块（INIT/寄存器/图像，各含自身命令字节）
+        boolean[] resp;    // 每块是否要回执（true=WRITE_TYPE_DEFAULT 等回调）
         int index = 0;
         volatile boolean cancelled = false;
     }
@@ -324,6 +344,20 @@ public class EinkBoardManager {
         }
     };
 
+    // ============ 黑白快刷开关 ============
+
+    /** 快刷模式（默认开，用户定：优先低延时；关闭=三色全刷约 15s） */
+    public boolean isFastMode() {
+        return appContext != null
+                && appContext.getSharedPreferences("eink", Context.MODE_PRIVATE).getBoolean("fast", true);
+    }
+
+    public void setFastMode(boolean on) {
+        appContext.getSharedPreferences("eink", Context.MODE_PRIVATE)
+                .edit().putBoolean("fast", on).apply();
+        log(on ? "快刷模式：开（黑白 2-3 秒，无红色）" : "快刷模式：关（三色全刷约 15 秒）");
+    }
+
     // ============ 蓝牙常开（epd-noclock 0x25） ============
 
     public void setBleAlwaysOn(final boolean on) {
@@ -365,13 +399,44 @@ public class EinkBoardManager {
         if (job != null) { emit("push-status", "busy"); return; } // 上一次还在推
         EinkTagRenderer.TagData d = EinkTagRenderer.parse(tagDataJson);
         if (d == null) { log("推送数据解析失败"); return; }
-        Bitmap bmp = EinkTagRenderer.render(d);
-        byte[][] planes = quantize(bmp);
+        boolean fast = isFastMode();
+        Bitmap bmp = EinkTagRenderer.render(d, fast);
+        int chunkSize = Math.max(18, mtu - 2);
+        java.util.List<byte[]> chunks = new java.util.ArrayList<>();
+        java.util.List<Boolean> resp = new java.util.ArrayList<>();
+        if (fast) {
+            // 黑白快刷：INIT(BW 模型) → 寄存器(PSR/CDI/LUT) → 单张黑白面 → REFRESH
+            byte[] mono = quantizeBW(bmp);
+            chunks.add(new byte[]{(byte) CMD_INIT, (byte) MODEL_UC8176_420_BW}); resp.add(true);
+            chunks.add(new byte[]{(byte) CMD_SEND_CMD, 0x00}); resp.add(true);
+            chunks.add(new byte[]{(byte) CMD_SEND_DATA, (byte) PSR_BW}); resp.add(true);
+            chunks.add(new byte[]{(byte) CMD_SEND_CMD, 0x50}); resp.add(true);
+            chunks.add(new byte[]{(byte) CMD_SEND_DATA, (byte) CDI_BW}); resp.add(true);
+            byte[][] luts = {BW_LUTC, BW_LUTWW, BW_LUTBW, BW_LUTWB, BW_LUTBB};
+            for (int t = 0; t < luts.length; t++) {
+                chunks.add(new byte[]{(byte) CMD_SEND_CMD, (byte) (0x20 + t)}); resp.add(true);
+                for (int off = 0; off < luts[t].length; off += chunkSize) {
+                    int len = Math.min(chunkSize, luts[t].length - off);
+                    byte[] blk = new byte[1 + len];
+                    blk[0] = (byte) CMD_SEND_DATA;   // 同一寄存器下连续 SEND_DATA 分块续写
+                    System.arraycopy(luts[t], off, blk, 1, len);
+                    chunks.add(blk); resp.add(true);
+                }
+            }
+            addImageBlocks(chunks, resp, mono, chunkSize, false);
+        } else {
+            // 三色全刷：INIT 重置快刷残留的 PSR/LUT，两平面照旧
+            byte[][] planes = quantize(bmp);
+            chunks.add(new byte[]{(byte) CMD_INIT, (byte) MODEL_UC8176_420_BWR}); resp.add(true);
+            addImageBlocks(chunks, resp, planes[0], chunkSize, false);
+            addImageBlocks(chunks, resp, planes[1], chunkSize, true);
+        }
         PushJob j = new PushJob();
-        j.chunks = buildChunks(planes[0], planes[1]);
+        j.chunks = chunks.toArray(new byte[0][]);
+        j.resp = new boolean[resp.size()];
+        for (int i = 0; i < resp.size(); i++) j.resp[i] = resp.get(i);
         job = j;
         emit("push-status", "start");
-        writeCmd(CMD_INIT);
         work.post(new Runnable() { @Override public void run() { pushNext(); } });
     }
 
@@ -397,24 +462,42 @@ public class EinkBoardManager {
         return new byte[][]{bw, red};
     }
 
-    /** 两面打包为 WRITE_IMG 块序列：每块 = [标志字节, 数据...]，块数据 = mtu-2 字节 */
-    private byte[][] buildChunks(byte[] bw, byte[] red) {
-        int chunkSize = Math.max(18, mtu - 2);
-        java.util.List<byte[]> out = new java.util.ArrayList<>();
-        for (int plane = 0; plane < 2; plane++) {
-            byte[] data = plane == 0 ? bw : red;
-            int firstFlag = plane == 0 ? 0x0F : 0x00;   // 黑白首块 0x0F / 红面首块 0x00
-            int nextFlag = plane == 0 ? 0xFF : 0xF0;    // 后续 0xFF / 0xF0
-            for (int off = 0, i = 0; off < data.length || i == 0; off += chunkSize, i++) {
-                int len = Math.min(chunkSize, data.length - off);
-                byte[] blk = new byte[1 + len];
-                blk[0] = (byte) (off == 0 ? firstFlag : nextFlag);
-                System.arraycopy(data, off, blk, 1, len);
-                out.add(blk);
-                if (off >= data.length) break; // 空面（全红等极端）保护
+    /** 黑白量化：单张 1bpp（红像素灰度 ~106-120 < 140，自然落黑） */
+    private static byte[] quantizeBW(Bitmap bmp) {
+        int w = bmp.getWidth(), h = bmp.getHeight();
+        int byteWidth = (w + 7) / 8;
+        int[] px = new int[w * h];
+        bmp.getPixels(px, 0, w, 0, 0, w, h);
+        byte[] mono = new byte[h * byteWidth];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int c = px[y * w + x];
+                int gray = (299 * ((c >> 16) & 0xFF) + 587 * ((c >> 8) & 0xFF) + 114 * (c & 0xFF)) / 1000;
+                if (gray >= 140) mono[y * byteWidth + x / 8] |= (byte) (1 << (7 - (x % 8)));
             }
         }
-        return out.toArray(new byte[0][]);
+        return mono;
+    }
+
+    /**
+     * 图像面打包为 WRITE_IMG 块序列。标志位（固件 EPD_service.c 解析）：
+     * bit0=0 黑面/1 红面，bit1=1 首块，bit2=1 RLE（我们不压缩，恒 0）。
+     * ⚠️ 黑面首块 0x02/后续 0x00、红面首块 0x03/后续 0x01 ——
+     * 不可用旧式 0x0F/0xFF（bit2=1 会被新版固件误判为 RLE 数据）。
+     */
+    private static void addImageBlocks(java.util.List<byte[]> out, java.util.List<Boolean> resp,
+                                       byte[] data, int chunkSize, boolean red) {
+        int firstFlag = red ? 0x03 : 0x02;
+        int nextFlag = red ? 0x01 : 0x00;
+        for (int off = 0, i = 0; off < data.length || i == 0; off += chunkSize, i++) {
+            int len = Math.min(chunkSize, data.length - off);
+            byte[] blk = new byte[1 + len];
+            blk[0] = (byte) (off == 0 ? firstFlag : nextFlag);
+            System.arraycopy(data, off, blk, 1, len);
+            out.add(blk);
+            resp.add(i % 50 == 49);   // 每 50 块要一次回执
+            if (off >= data.length) break; // 空面（全红等极端）保护
+        }
     }
 
     /** 逐块状态机：onCharacteristicWrite 回调驱动 */
@@ -432,8 +515,8 @@ public class EinkBoardManager {
         if (gatt == null || epdChar == null) { job = null; log("连接断开，推送中止"); return; }
         byte[] blk = j.chunks[j.index];
         epdChar.setValue(blk);
-        epdChar.setWriteType(j.index % 50 == 49
-                ? BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT        // 每 50 块要一次回执
+        epdChar.setWriteType(j.resp[j.index]
+                ? BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT        // 控制块/每 50 块要回执
                 : BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
         boolean ok = gatt.writeCharacteristic(epdChar);
         if (!ok) {
