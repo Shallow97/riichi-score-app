@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>前端视觉优化方案 · 2026-09-30</title>
+<style>
+:root{
+  --page-bg:#F4F6F4; --surface:#FFFFFF; --surface-alt:#EDF4F0;
+  --accent:#1E7A4E; --accent-dark:#155F3D; --accent-light:#E6F0EA;
+  --gold:#8F6B12; --border:#E3E8E6; --border-strong:#C4D0CA;
+  --text:#27343D; --text-strong:#1C2B24; --text-dim:#5F6E76;
+  --danger:#D94F3D; --danger-text:#C13E2E;
+  --shadow-1:0 1px 3px rgba(28,43,36,.10); --shadow-2:0 4px 14px rgba(28,43,36,.14);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--page-bg);color:var(--text);
+  font-family:"PingFang SC","Microsoft YaHei","Helvetica Neue",Arial,sans-serif;
+  padding:24px 16px 80px;max-width:760px;margin:0 auto;line-height:1.6}
+h1{font-size:22px;color:var(--accent);letter-spacing:1px;margin-bottom:4px;text-align:center}
+.meta-line{text-align:center;font-size:13px;color:var(--text-dim);margin-bottom:24px}
+h2{font-size:17px;color:var(--accent);margin:28px 0 12px;padding-left:10px;border-left:4px solid var(--accent)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:12px;box-shadow:var(--shadow-1)}
+.tag{display:inline-block;border-radius:10px;padding:1px 10px;font-size:12px;font-weight:700;margin-right:6px;vertical-align:1px}
+.tag.p1{background:var(--accent);color:#fff}
+.tag.p2{background:var(--accent-light);color:var(--accent);border:1px solid var(--border-strong)}
+.tag.p3{background:#f0f0f0;color:var(--text-dim);border:1px solid var(--border)}
+.tag.opt{background:#FDF1EF;color:var(--danger-text);border:1px solid #F0B6AC}
+.item-title{font-size:15px;font-weight:700;color:var(--text-strong);margin-bottom:6px}
+.item p{font-size:13.5px;margin:4px 0}
+.lbl{font-size:12px;font-weight:700;color:var(--text-dim);letter-spacing:1px}
+.how{background:var(--surface-alt);border-radius:10px;padding:8px 12px;font-size:13px;margin-top:8px}
+.how b{color:var(--accent)}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}
+th,td{border:1px solid var(--border);padding:6px 8px;text-align:left;vertical-align:top}
+th{background:var(--surface-alt);color:var(--text-strong);font-weight:700}
+.ok-list li,.issue-list li{font-size:13.5px;margin:4px 0}
+.sw{display:inline-block;width:14px;height:14px;border-radius:4px;vertical-align:-2px;border:1px solid rgba(0,0,0,.15)}
+.confirm-list{list-style:none}
+.confirm-list li{padding:8px 0;border-bottom:1px dashed var(--border);font-size:14px}
+.confirm-list li:last-child{border-bottom:none}
+.footer-note{font-size:12px;color:var(--text-dim);text-align:center;margin-top:28px}
+code{background:var(--surface-alt);border-radius:4px;padding:0 5px;font-size:12.5px;color:var(--accent-dark)}
+</style>
+</head>
+<body>
+
+<h1>前端视觉优化方案</h1>
+<div class="meta-line">日麻计分 APP（prototype / 393px 窄屏） · impeccable 审查驱动 · 2026-09-30 · <b>仅方案，未动任何代码</b></div>
+
+<h2>设计上下文（沿用已批准口径）</h2>
+<div class="card">
+  <p style="font-size:13.5px">使用者：面对面打日麻的牌友，房主手机计分、局域网多人看同一界面。核心诉求是<b>「扫一眼看清谁多少分、下一手点哪」</b>。视觉基调沿用 2026-09-28 已批准的外观体系（品牌绿 + 圆角 10/14/20 三档 + 阴影两档 + 字重 ≤700），本轮<b>只做收敛与修补，不推翻方向</b>。</p>
+</div>
+
+<h2>审查结论</h2>
+<div class="card">
+  <span class="lbl">做得好的（保持不动）</span>
+  <ul class="ok-list">
+    <li>信息层级正确：座位卡分数 22px 等宽数字是第一焦点，局号已收敛到 16px；东风位即庄家的约定清晰。</li>
+    <li>对比度工作已做过一轮：text-dim / gold / danger-text 都换成达标色并写明比值。</li>
+    <li>有品牌意象：立直棒（白条红点）贯穿桌面、选人、逐局记录，不是泛 AI 界面。</li>
+    <li>动效克制：弹窗 120ms 减晃版 + 链内 .instant，符合工具类定位。</li>
+  </ul>
+  <span class="lbl" style="display:block;margin-top:10px">问题（按严重度）</span>
+  <ul class="issue-list">
+    <li><b>[P1]</b> 0 分着色 <code>.pts.neg2</code> 仍是废弃旧金 <span class="sw" style="background:#C9992E"></span> <code>#C9992E</code>（白底 2.60:1，连大字 3:1 都不达标；token 早已换成 <span class="sw" style="background:#8F6B12"></span> <code>#8F6B12</code>）。</li>
+    <li><b>[P1]</b> 桌面四角按钮三种视觉语言混用：<code>⚄</code> Unicode 字符（部分 WebView 渲染成彩色 emoji，不可控）、汉字「算」「？」、线性 SVG（视角）。同一桌面图标不成体系。</li>
+    <li><b>[P1]</b> 主界面顶栏「‹ 返回」「新对局」是 14px 文字 span，触控热区远小于 44px，是全屏唯一不达标的可点元素。</li>
+    <li><b>[P2]</b> 硬编码色残留约 15 处（风牌四色、notice、取景框、骰面、toast、<code>var(--card,·)</code> 引用了不存在的 token）。浅色下无症状，但是夜间主题的直接障碍。</li>
+    <li><b>[P2]</b> 「本局操作」六个按钮同权重：最高频的「和牌结算」与低频破坏性的「结束对局」视觉完全同权，主操作 2 秒内认不出来。</li>
+    <li><b>[P2]</b> 空状态只有一行灰字（历史页、半庄分数记录），没有引导。</li>
+    <li><b>[P3]</b> 座位卡「你」角标 9px、meta 10px，偏小。</li>
+  </ul>
+</div>
+
+<h2>改进项（逐项确认）</h2>
+
+<div class="card item">
+  <div class="item-title"><span class="tag p1">A · P1</span>一致性修复：0 分旧金色 + 失效 token</div>
+  <p><span class="lbl">改法</span>　<code>.pts.neg2</code> 由 <code>#C9992E</code> 改为 <code>var(--gold)</code>；<code>.eink-scan-item</code> 的 <code>var(--card, #fff)</code> 改为 <code>var(--surface)</code>。</p>
+  <div class="how"><b>改动</b>：仅 css/style.css 两行，零 DOM 风险。　<b>验证</b>：全量 jsdom 测试 + 截图对比。</div>
+</div>
+
+<div class="card item">
+  <div class="item-title"><span class="tag p1">B · P1</span>桌面四角按钮图标语言统一</div>
+  <p><span class="lbl">改法</span>　骰子 <code>⚄</code> 与「算」改为与视角按钮同一笔画的线性 SVG（24×24、stroke-width 2）；右上「？」保留不动（字形位移是滑块校准过的，动它要重新校准，收益为零）。</p>
+  <p style="font-size:12.5px;color:var(--text-dim)">风险说明：改的是 index.html 按钮内部内容，按钮 id 不变；已核对全部测试均按 id 断言存在/点击，不锁这两个按钮的文字。</p>
+  <div class="how"><b>改动</b>：index.html 两处内容 + style.css 微调。　<b>验证</b>：全量测试 + CDP 真浏览器 393×852 截图。</div>
+</div>
+
+<div class="card item">
+  <div class="item-title"><span class="tag p1">C · P1</span>顶栏触控热区补到 44px</div>
+  <p><span class="lbl">改法</span>　<code>.topbar .back</code>（含 #btn-new-game）加纵向 padding 12px + 负 margin 抵消，热区到 44px，视觉位置不变。</p>
+  <div class="how"><b>改动</b>：仅 style.css。　<b>验证</b>：CDP 量取 getBoundingClientRect ≥44px。</div>
+</div>
+
+<div class="card item">
+  <div class="item-title"><span class="tag p1">D · P1</span>硬编码色收进 token（夜间主题前置工程）</div>
+  <p><span class="lbl">改法</span>　把风牌四色、notice 双色、scan-frame 绿、骰面墨色、toast 底色等约 15 处硬编码值原样搬进 <code>:root</code> token，<b>值一律不变，只挪位置</b>。夜间主题是已批方向，这步做完它才有可能。</p>
+  <div class="how"><b>改动</b>：仅 style.css。　<b>验证</b>：全量测试 + 截图比对像素级应无变化。</div>
+</div>
+
+<div class="card item">
+  <div class="item-title"><span class="tag p2">E · P2</span><span class="tag opt">观感变化最大，请拍板</span>操作按钮分主次</div>
+  <p><span class="lbl">改法</span>　「和牌结算」升为主按钮（品牌绿实心）；「结束对局」降为幽灵描边 + 深红文字；其余保持白底描边。纯 CSS 按 id 定制，不改 class 名。</p>
+  <div class="how"><b>改动</b>：仅 style.css。　<b>验证</b>：全量测试（view-lock-test 读过 style.css，改后必须跑）+ 截图。</div>
+</div>
+
+<div class="card item">
+  <div class="item-title"><span class="tag p2">F · P2</span>空状态引导</div>
+  <p><span class="lbl">改法</span>　历史页与「半庄分数记录」空态：灰字上方加一枚小型立直棒图形（复用现有白条红点意象，纯 CSS 绘制），文案微调为引导句（如「完成第一局结算后，记录会显示在这里」）。</p>
+  <div class="how"><b>改动</b>：index.html 空态节点 + style.css + app.js 空态文案处。DOM 有增节点，改后全量跑测试确认。</div>
+</div>
+
+<div class="card item">
+  <div class="item-title"><span class="tag p3">G · P3</span>小字可读性微调</div>
+  <p><span class="lbl">改法</span>　座位卡「你」角标 9px→11px、meta 10px→10.5px，不破 108px 卡宽布局。</p>
+  <div class="how"><b>改动</b>：仅 style.css。　<b>验证</b>：真机截图确认不溢出。</div>
+</div>
+
+<div class="card item">
+  <div class="item-title"><span class="tag p3">H · P3</span>建议本轮不做</div>
+  <ul class="issue-list">
+    <li><b>内嵌数字字体</b>：体积与离线打包成本高，系统字体在小米 14 渲染尚可，不建议。</li>
+    <li><b>夜间主题</b>：方向已批，但属独立立项，建议 D 项完成后再单独出方案。</li>
+  </ul>
+</div>
+
+<h2>确认清单</h2>
+<div class="card">
+  <ul class="confirm-list">
+    <li>☑ A 一致性修复（两行 CSS，低风险）</li>
+    <li>☑ B 四角按钮图标统一（动 index.html 两处，id 不变）</li>
+    <li>☑ C 顶栏热区 44px</li>
+    <li>☑ D 硬编码色收 token（为夜间主题铺路）</li>
+    <li>☐ E 操作按钮分主次（观感变化最大，默认不做，等你点头）</li>
+    <li>☐ F 空状态引导（需增 DOM 节点，默认不做）</li>
+    <li>☐ G 小字微调</li>
+    <li>☐ H 本轮不做（维持现状）</li>
+  </ul>
+  <p style="font-size:12.5px;color:var(--text-dim);margin-top:8px">无论选哪些，执行流程固定：改 prototype → 全量 jsdom 测试 → CDP 真浏览器 393×852 截图对比 → 同步 assets → assembleDebug → 真机抽查。全程不改任何 class 名与既有 DOM 结构。</p>
+</div>
+
+<div class="footer-note">方案文档 · 未修改任何项目代码</div>
+</body>
+</html>

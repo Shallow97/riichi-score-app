@@ -19,7 +19,7 @@
 - **装完 APK 的验证链**（一条命令串起来，adb server 会被回收）：`install -r` → `dumpsys package com.riichi.score | grep lastUpdateTime`（确认是刚装的）→ `monkey -p com.riichi.score -c android.intent.category.LAUNCHER 1` + `pidof`（确认不闪退）→ 技能脚本 `cdp-eval.js` 直查真机 DOM（元素/`getComputedStyle` 是否为新版）
 - 测试：`cd prototype/tests && NODE_PATH="C:/Users/Administrator/.workbuddy/binaries/node/workspace/node_modules" "C:/Users/Administrator/.workbuddy/binaries/node/versions/22.22.2-3/node.exe" <脚本>.js`
   ⚠️ **跑测试前确认 8765 没被 serve.js 占用**：否则 net.js 连上 `ws://127.0.0.1:8765/ws`，重连定时器让 node 跑完不退出（`timeout` 返 124），易误判为定时器泄漏
-- **真机 CDP**：APP 已开 `setWebContentsDebuggingEnabled`。`adb shell cat /proc/net/unix | grep -o "@webview_devtools_remote_[0-9]*"` → `adb forward tcp:9222 localabstract:<sock>` → node+`ws`(`prototype/node_modules`) 发 `Runtime.evaluate`
+- **真机 CDP**：APP 已开 `setWebContentsDebuggingEnabled`。`adb shell cat /proc/net/unix | grep -o "@webview_devtools_remote_[0-9]*"` → `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>`（**localabstract 不带 @ 前缀**，@ 是 /proc/net/unix 的抽象套接字标记；带 @ 会 socket hang up）→ node+`ws`(`prototype/node_modules`) 发 `Runtime.evaluate`
   ⚠️ adb 每条命令后 server 被回收 → forward 失效：**socket/forward/CDP 必须写在同一条 Bash 命令**
   ⚠️ `input tap` 在 WebView 内不可靠（改用 CDP 注入）；但系统权限框只能用 tap，且该 tap 会穿透到 WebView
 - **真浏览器**（jsdom 无布局/canvas）：`cd prototype && node serve.js`（须后台任务方式起，`(cmd &)` 会被杀）→ chrome（`/c/Program Files/Google/Chrome/Application/chrome.exe`）无头或 CDP（`--remote-debugging-port=9333 --user-data-dir=D:/_x`）
@@ -75,4 +75,14 @@
 - 面向固定窄屏 ~393px（无 `@media`）；index.html 4 `.page`（mode/setup/main/history）+ **26** 个 `#modal-*`（tsumo-review 已删）
 - ⚠️ 改版真正成本是 tests/ 上千处 DOM 断言（唯 `view-lock-test.js` 读 style.css 的 `.modal-view .view-actions .btn`）→ 不改 class 名/HTML 结构则全绿
 - 视觉稿/三方案在 `design-preview/`；现状截图在 `design-preview/audit/`
-- **外观体系（2026-09-28 落地，用户批准①②③⑤+④无徽标）**：圆角 3 档 10/14/20px；阴影 `--shadow-1`(小件)/`--shadow-2`(弹窗悬浮) 两档；字重最多 700（800/900 已清除）；`--text-dim #5F6E76`、`--gold #8F6B12`、`--danger-text #C13E2E`（危险**小字**用，负分大数字仍 `--danger #D94F3D`）；按钮一套语言=描边环+轻投影（厚底拟物已删，按压 scale(.98)）；`#toast` 在**底部**（曾压北家）；弹窗动画（2026-09-29 减晃版）：仅"从主界面新开"播 overlayIn/modalIn（`--modal-dur:.12s`、modalIn 无位移 scale .97）；**链内推进/叠层打开由 app.js 判定加 `.instant` 零动画**（判据=150ms 内关过弹窗或已有弹窗开着，因链内关旧开新两种顺序都有）；`prefers-reduced-motion` 下全禁；close-x 44px 热区、seat-chip min-height 44；座位卡 pts 22px tabular-nums 为第一焦点、wind 14px、局号 16px。**东风位即庄家（用户定），不加庄家徽标**。夜间主题（暗色变量套）已批方向未实现，放 token 之后再做
+- **外观体系（2026-09-28 落地，用户批准①②③⑤+④无徽标）**：圆角 3 档 10/14/20px；阴影 `--shadow-1`(小件)/`--shadow-2`(弹窗悬浮) 两档；字重最多 700（800/900 已清除）；`--text-dim #5F6E76`、`--gold #8F6B12`、`--danger-text #C13E2E`（危险**小字**用，负分大数字仍 `--danger #D94F3D`）；按钮一套语言=描边环+轻投影（厚底拟物已删，按压 scale(.98)）；`#toast` 在**底部**（曾压北家）；弹窗动画（2026-09-29 减晃版）：仅"从主界面新开"播 overlayIn/modalIn（`--modal-dur:.12s`、modalIn 无位移 scale .97）；**链内推进/叠层打开由 app.js 判定加 `.instant` 零动画**（判据=150ms 内关过弹窗或已有弹窗开着，因链内关旧开新两种顺序都有）；`prefers-reduced-motion` 下全禁；close-x 44px 热区、seat-chip min-height 44；座位卡 pts 22px tabular-nums 为第一焦点、wind 14px、局号 16px。**东风位即庄家（用户定），不加庄家徽标**。**夜间主题：用户 2026-09-30 拍板不考虑，勿再提议。**
+
+## 视觉优化 A~G（2026-09-30 落地，impeccable 审查驱动，方案稿 design-preview/视觉优化方案-2026-09-30.html）
+- **组件色已全部 token 化**（值不变只挪位置）：`--wind-东南西北`/`--riichi-border(-dot)`/`--die-ink(-red)`/`--table-btn-bg(-hover)`/`--end-banner-bg`/`--toast-bg`/`--notice-*`/`--net-off-bg`/`--scan-frame`；改主题相关颜色只动 :root
+- 一致性修复：`.pts.neg2`（0分）旧硬编码 #C9992E → var(--gold)；`var(--card,·)` 不存在的 token → var(--surface)
+- 四角按钮图标统一线性 SVG：#btn-dice（骰面5点）、#btn-calc（计算器）已换内联 SVG；**#btn-help「？」保留汉字字形**（translateX 5px 是滑块校准的，勿动）；tests 按 id 断言不锁按钮内容，已验证
+- 按钮主次（纯 id CSS，未改 class/DOM）：`#btn-tsumo-ron` 主按钮绿、`#btn-end` 幽灵描边深红（--danger-text）
+- 顶栏热区：`.topbar .back` padding 14px/10px + 负 margin 抵消（视觉位置不变，热区 47px）
+- 空态引导：`.empty-state`/`.empty-riichi .er-bar`（迷你立直棒）；app.js 两处 innerHTML（round-log 空态文案**必须保留子串「尚无已结算的对局」**，round-log-test 断言）
+- 小字：`.you-mark` 9→11px、`.seat .meta` 10→10.5px
+- 复核工具：`prototype/tools/shot-visual-opt.js`（Chrome CDP 393×852 全套断言+截图，勿起 serve.js 用 file://）；`tools/check-device-visual.js`（真机，先 `install -r` + monkey 起活再 forward）。本轮 22/22 jsdom 全绿、Chrome 端全 PASS、真机 6/6 PASS，APK 已装真机（21:18）

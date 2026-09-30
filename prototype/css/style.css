@@ -29,6 +29,32 @@
   --red: #D94F3D;
   --btn-press: #EFF3F0;      /* 次按钮按压态（白底微暗） */
 
+  /* ===== 组件级 token（原硬编码色收拢，值不变；供后续主题化统一改） ===== */
+  /* 风牌四色：东红/南绿/西蓝/北黑 */
+  --wind-east: #D94F3D;
+  --wind-south: #2E8B57;
+  --wind-west: #3D6FB4;
+  --wind-north: #333A45;
+  /* 立直棒：白条描边 + 红点（桌面/选人/逐局记录共用） */
+  --riichi-border: #9AA5A7;
+  --riichi-dot: #E53935;
+  /* 骰子：骰面墨色 + 1 点红 */
+  --die-ink: #1F2629;
+  --die-red: #E53935;
+  /* 桌面四角按钮 / 结束横幅 / toast */
+  --table-btn-bg: rgba(30,122,78,.85);
+  --table-btn-hover: rgba(24,104,66,.95);
+  --end-banner-bg: rgba(217,79,61,.92);
+  --toast-bg: rgba(21,95,61,.95);
+  /* 提示条 */
+  --notice-warn-bg: #FDF1EF;
+  --notice-warn-border: #F0B6AC;
+  --notice-ok-bg: #ECF7F0;
+  --notice-ok-border: #B8DFC9;
+  --net-off-bg: #F2F2F2;
+  /* 扫码取景框四角 */
+  --scan-frame: #4ADE80;
+
   /* 阴影两档（Token 收敛）：小卡/座位用 -1，弹窗/悬浮件用 -2 */
   --shadow-1: 0 1px 3px rgba(28,43,36,.10);
   --shadow-2: 0 4px 14px rgba(28,43,36,.14);
@@ -233,16 +259,16 @@ html, body {
 /* 信息层级：分数是第一焦点 → 分数加大+等宽数字，风字收敛（东=庄家为既定约定，不加徽标） */
 .seat .wind { font-size: 14px; font-weight: 700; color: var(--accent); line-height: 1.2; }
 /* 风牌四色（Ardot 设计稿）：东红/南绿/西蓝/北黑 */
-.seat .wind-东 { color: #D94F3D; }
-.seat .wind-南 { color: #2E8B57; }
-.seat .wind-西 { color: #3D6FB4; }
-.seat .wind-北 { color: #333A45; }
+.seat .wind-东 { color: var(--wind-east); }
+.seat .wind-南 { color: var(--wind-south); }
+.seat .wind-西 { color: var(--wind-west); }
+.seat .wind-北 { color: var(--wind-north); }
 .seat .name { font-size: 12px; color: var(--text); margin: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .seat .you-mark {
   position: absolute;
   top: 2px;
   right: 2px;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   color: #fff;
   background: var(--accent);
@@ -252,8 +278,8 @@ html, body {
 }
 .seat .pts { font-size: 22px; font-weight: 700; color: var(--text-strong); font-variant-numeric: tabular-nums; letter-spacing: -.3px; }
 .seat .pts.neg { color: #D94F3D; }  /* 20px+ 粗体属大文字，3:1 即达标，保持品牌危险红 */
-.seat .pts.neg2 { color: #C9992E; }
-.seat .meta { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+.seat .pts.neg2 { color: var(--gold); }  /* 0 分：旧硬编码 #C9992E 对比仅 2.60 不达标，统一走 --gold */
+.seat .meta { font-size: 10.5px; color: var(--text-dim); margin-top: 2px; }
 
 /* 骰子按钮：位于绿色桌布右下角 */
 .dice-btn {
@@ -265,7 +291,7 @@ html, body {
   font-size: 26px;
   line-height: 1;
   color: #ffffff;
-  background: rgba(30,122,78,.85);
+  background: var(--table-btn-bg);
   border: 2px solid rgba(255,255,255,.6);
   border-radius: 50%;
   cursor: pointer;
@@ -276,15 +302,13 @@ html, body {
   transition: transform .12s ease, background .12s ease;
   z-index: 5;
 }
-.dice-btn:hover { background: rgba(24,104,66,.95); transform: scale(1.06); }
+.dice-btn:hover { background: var(--table-btn-hover); transform: scale(1.06); }
 .dice-btn:active { transform: scale(.94); }
 
-/* 番符表计算器按钮：位于绿色桌布左下角（与骰子对称） */
+/* 番符表计算器按钮：位于绿色桌布左下角（与骰子对称），图标为线性 SVG */
 .calc-btn {
   right: auto;
   left: 12px;
-  font-size: 17px;
-  font-weight: 700;
 }
 
 /* 视角切换按钮：位于绿色桌布左上角（与右下角骰子对角） */
@@ -498,7 +522,7 @@ html, body {
   height: 6px;
   margin-top: 4px;
   background: #ffffff;
-  border: 1px solid #9aa5a7;
+  border: 1px solid var(--riichi-border);
   border-radius: 3px;
   box-shadow: 0 1px 2px rgba(0,0,0,.18);
 }
@@ -506,7 +530,7 @@ html, body {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #e53935;
+  background: var(--riichi-dot);
   box-shadow: 0 0 0 0.5px rgba(0,0,0,.15);
 }
 
@@ -538,6 +562,21 @@ html, body {
 .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .action-grid .btn { padding: 13px 6px; font-size: 14px; margin-top: 0; } /* 覆盖 .btn + .btn 的 margin，grid 内由 gap 控制对齐 */
 .action-grid .btn.span2 { grid-column: span 2; }
+
+/* 操作按钮主次分层（纯 id 定制，不改 class / DOM）：
+   「和牌结算」最高频 → 升主按钮；「结束对局」低频且破坏性 → 降为幽灵描边深红 */
+#btn-tsumo-ron {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(30,122,78,.28);
+}
+#btn-tsumo-ron:active { background: var(--accent-dark); }
+#btn-end {
+  background: transparent;
+  color: var(--danger-text);
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+#btn-end:active { background: rgba(193,62,46,.08); }
 
 /* ===== 本半庄分数记录（可折叠） ===== */
 .round-log-card {
@@ -622,7 +661,7 @@ html, body {
   margin-left: 4px;
   vertical-align: middle;
   background: #FFFFFF;
-  border: 1px solid #8A979E;
+  border: 1px solid var(--riichi-border);
   border-radius: 2px;
   box-shadow: 0 1px 1.5px rgba(0,0,0,.14);
 }
@@ -630,11 +669,11 @@ html, body {
   width: 3.5px;
   height: 3.5px;
   border-radius: 50%;
-  background: #E53935;
+  background: var(--riichi-dot);
 }
 .rl-player-pts { color: var(--text-strong); font-weight: 700; margin-left: 3px; }
 .rl-player-delta { font-weight: 700; margin-left: 4px; }
-.rl-player-delta.up   { color: #1E9E63; }
+.rl-player-delta.up   { color: var(--ok); }
 .rl-player-delta.down { color: var(--danger-text); } /* 13px 小字，用达标的深红 */
 .rl-player-delta.zero { color: var(--text-dim); font-weight: 500; }
 
@@ -726,7 +765,7 @@ html, body {
   width: 112px;
   height: 112px;
   background: #ffffff;
-  border: 3px solid #1f2629;
+  border: 3px solid var(--die-ink);
   border-radius: 20px;
   box-shadow: var(--shadow-2);
   box-sizing: border-box;
@@ -736,7 +775,7 @@ html, body {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #1f2629;
+  background: var(--die-ink);
   transform: translate(-50%, -50%);
   display: none;
 }
@@ -752,7 +791,7 @@ html, body {
 .die .pip[data-i="8"] { left: 85%;  top: 85%; }
 /* 1点（红色 die）：中心 pip 改红色，参考图中"红点1"样式 */
 .die[data-val="1"] .pip {
-  background: #e53935;
+  background: var(--die-red);
 }
 /* 摇动动画：快速随机抖动 */
 .die.shaking { animation: diceShake .6s ease-in-out infinite; }
@@ -793,7 +832,7 @@ html, body {
   height: 6px;
   margin-top: 8px;
   background: #ffffff;
-  border: 1px solid #9aa5a7;
+  border: 1px solid var(--riichi-border);
   border-radius: 3px;
   box-shadow: 0 1px 2px rgba(0,0,0,.18);
 }
@@ -801,7 +840,7 @@ html, body {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #e53935;
+  background: var(--riichi-dot);
   box-shadow: 0 0 0 0.5px rgba(0,0,0,.15);
 }
 
@@ -815,8 +854,8 @@ html, body {
   font-size: 14px;
   margin: 10px 0;
 }
-.notice.warn { background: #FDF1EF; border: 1px solid #F0B6AC; color: var(--danger-text); }
-.notice.ok { background: #ECF7F0; border: 1px solid #B8DFC9; color: #1E9E63; }
+.notice.warn { background: var(--notice-warn-bg); border: 1px solid var(--notice-warn-border); color: var(--danger-text); }
+.notice.ok { background: var(--notice-ok-bg); border: 1px solid var(--notice-ok-border); color: var(--ok); }
 
 /* 数字输入大 */
 .num-input { font-size: 22px; text-align: center; font-weight: 700; }
@@ -857,7 +896,15 @@ html, body {
 
 /* 顶部条 */
 .topbar { display: flex; align-items: center; justify-content: space-between; max-width: 460px; margin: 0 auto 6px; width: 100%; }
-.topbar .back { color: var(--accent); cursor: pointer; font-size: 14px; font-weight: 600; }
+/* 顶栏可点元素：14px 文字太小，补出 ≥44px 触控热区（padding+负 margin，视觉位置不变） */
+.topbar .back {
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 14px 10px;
+  margin: -14px -10px;
+}
 .topbar .status { font-size: 12px; color: var(--text-dim); }
 
 /* 分栏滚动 */
@@ -870,7 +917,7 @@ html, body {
   bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%) translateY(120px);
-  background: rgba(21,95,61,.95);
+  background: var(--toast-bg);
   color: #fff;
   padding: 12px 20px;
   border-radius: 14px;
@@ -885,7 +932,7 @@ html, body {
 
 /* 结束横幅 */
 .end-banner {
-  background: rgba(217,79,61,.92);
+  background: var(--end-banner-bg);
   border-radius: 14px;
   padding: 12px;
   text-align: center;
@@ -899,6 +946,36 @@ html, body {
 /* 小提示 */
 .hint { font-size: 12px; color: var(--text-dim); text-align: center; margin-top: 8px; }
 
+/* 空状态引导：迷你立直棒（白条红点，沿用品牌意象）+ 文案（历史页 / 半庄分数记录共用） */
+.empty-state {
+  text-align: center;
+  padding: 14px 0 6px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.empty-riichi {
+  display: block;
+  margin: 0 auto 10px;
+}
+.empty-riichi .er-bar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 8px;
+  background: #ffffff;
+  border: 1px solid var(--riichi-border);
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.16);
+}
+.empty-riichi .er-bar::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--riichi-dot);
+}
+
 /* ============ 联网对局卡片 ============ */
 .net-status {
   font-size: 13px;
@@ -908,7 +985,7 @@ html, body {
   background: var(--surface-alt, #EDF4F0);
   color: var(--accent);
 }
-.net-status.off { background: #f2f2f2; color: var(--text-dim); }
+.net-status.off { background: var(--net-off-bg); color: var(--text-dim); }
 .net-room {
   background: var(--surface-alt, #EDF4F0);
   border: 1px solid var(--border);
@@ -999,7 +1076,7 @@ html, body {
   position: absolute;
   width: 26px;
   height: 26px;
-  border: 3px solid #4ADE80;
+  border: 3px solid var(--scan-frame);
 }
 .scan-frame::before { left: -1px; top: -1px; border-right: none; border-bottom: none; border-radius: 10px 0 0 0; }
 .scan-frame::after { right: -1px; bottom: -1px; border-left: none; border-top: none; border-radius: 0 0 10px 0; }
@@ -1020,7 +1097,7 @@ html, body {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 12px; margin-top: 8px;
   border: 1px solid var(--border); border-radius: 10px;
-  cursor: pointer; background: var(--card, #fff);
+  cursor: pointer; background: var(--surface);
 }
 .eink-scan-item:active { opacity: .7; }
 .eink-scan-item .nm { font-size: 15px; font-weight: 700; }

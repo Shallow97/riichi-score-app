@@ -939,7 +939,7 @@
       : [];
     if (countEl) countEl.textContent = records.length ? `（${records.length} 局）` : '';
     if (!records.length) {
-      body.innerHTML = '<div class="round-log-empty">尚无已结算的对局，结算一局后在此显示。</div>';
+      body.innerHTML = '<div class="round-log-empty"><span class="empty-riichi" aria-hidden="true"><span class="er-bar"></span></span>尚无已结算的对局，完成第一局结算后会显示在这里。</div>';
       return;
     }
     // 最新在前，便于一眼看到刚结算的局
@@ -2228,7 +2228,7 @@
     const cont = $('#history-list');
     cont.innerHTML = '';
     if (list.length === 0) {
-      cont.innerHTML = '<div class="hint">还没有完成的对局记录</div>';
+      cont.innerHTML = '<div class="empty-state"><span class="empty-riichi" aria-hidden="true"><span class="er-bar"></span></span>还没有完成的对局记录，开一局试试。</div>';
       return;
     }
     list.forEach((g) => {
