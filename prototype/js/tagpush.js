@@ -312,7 +312,7 @@
     let closed = false;
     function connect() {
       if (closed) return;
-      try { ws = new WebSocket(proto + '//' + host + '/ws'); } catch (e) { setTimeout(connect, 3000); return; }
+      try { ws = new WebSocket(proto + '://' + host + '/ws'); } catch (e) { setTimeout(connect, 3000); return; }
       ws.onopen = () => {
         if (onWsStatus) onWsStatus('connected');
         try { ws.send(JSON.stringify({ type: 'set-name', name: '场风盘' })); } catch (e) {}
