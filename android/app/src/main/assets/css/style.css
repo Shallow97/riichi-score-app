@@ -930,6 +930,37 @@ html, body {
 }
 #toast.show { transform: translateX(-50%) translateY(0); }
 
+/* 掉线锁定横幅：顶部通栏。仅在"曾进房但当前与服务器断开"时由 app.js 取消 hidden。
+   z-index 高于 confirm(300)：断线提示必须压过一切弹窗，避免玩家以为操作已生效。 */
+#net-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 320;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 14px;
+  background: var(--danger-text);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: center;
+}
+#net-banner[hidden] { display: none; }
+/* 房主暂时离开（服务器还在、分数都在）：金色提示，不锁结算 */
+#net-banner.info { background: var(--gold); }
+#net-banner .net-banner-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+}
+
 /* 结束横幅 */
 .end-banner {
   background: var(--end-banner-bg);
@@ -1092,7 +1123,20 @@ html, body {
 .scan-status.ok { color: var(--ok); }
 
 /* ============ 场风盘蓝牙控制（page-eink，2026-09-30） ============ */
+.eink-manual { display: flex; gap: 8px; margin-top: 10px; }
+.eink-manual input {
+  flex: 1 1 auto; min-width: 0; padding: 10px 12px; font-size: 14px;
+  border: 1px solid var(--border-strong); border-radius: 10px;
+  background: var(--surface); color: var(--text); font-family: inherit;
+}
+.eink-manual input::placeholder { color: var(--text-dim); font-size: 13px; }
+.eink-manual .btn { flex: 0 0 auto; width: auto; margin-top: 0; padding-left: 18px; padding-right: 18px; }
 .eink-scan-list { margin-top: 10px; }
+/* 列表上方统计：把「扫到 15 个但没有场风盘」和「一个都没扫到」一眼分开 */
+.eink-scan-count {
+  margin-top: 10px; font-size: 12px; line-height: 1.5; color: var(--text-dim);
+}
+.eink-scan-count:empty { display: none; }
 .eink-scan-item {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 12px; margin-top: 8px;
@@ -1102,7 +1146,27 @@ html, body {
 .eink-scan-item:active { opacity: .7; }
 .eink-scan-item .nm { font-size: 15px; font-weight: 700; }
 .eink-scan-item .meta { font-size: 13px; color: var(--text-dim); }
+/* 软命中（广播里带本服务 UUID，或名字像 EPD 设备）：排前 + 描边高亮 */
+.eink-scan-item.hit { border-color: var(--ok); box-shadow: var(--shadow-1); }
+.eink-scan-item .tag {
+  margin-left: 6px; padding: 1px 6px; border-radius: 8px;
+  font-size: 11px; font-style: normal; font-weight: 400;
+  color: var(--ok); border: 1px solid var(--ok);
+}
 .eink-tip {
   margin-top: 10px; font-size: 13px; line-height: 1.6;
   color: var(--text-dim);
 }
+/* 推图日志留屏（替代一闪而过的 toast —— 原生日志以前只用 toast 显示，定位故障时完全看不见） */
+.eink-log {
+  margin-top: 10px; max-height: 190px; overflow-y: auto;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface);
+}
+.eink-log:empty { display: none; }
+.eink-log .ln {
+  display: block; font-size: 12px; line-height: 1.55;
+  color: var(--text-dim); word-break: break-all;
+}
+.eink-log .ln.warn { color: var(--danger-text); }
+.eink-log .ln.ok { color: var(--ok); }

@@ -7,6 +7,13 @@
 
     <!-- 锁屏保活：PARTIAL_WAKE_LOCK 让 CPU 在息屏后仍运行服务器（不要求保持亮屏） -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Wi-Fi 锁（WifiLock）：息屏后保持 Wi-Fi 射频不休眠，避免成员在房主锁屏时被踢下线。
+         WAKE_LOCK 只保 CPU，不保 Wi-Fi；二者配合才能真正常驻。均为安装即授予的普通权限 -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <!-- 电池优化白名单引导：部分 ROM 会在息屏一段时间后冻结后台进程，导致房主掉线。
+         该权限允许应用直接弹出系统「不受电池优化限制」确认框（用户可拒绝） -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Android 8.0+ 前台服务需此权限 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- Android 14 (API 34) 必须声明与 foregroundServiceType 对应的细分权限，否则 startForeground 会抛 SecurityException 闪退 -->
@@ -22,6 +29,10 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
             android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- 位置权限：BLUETOOTH_SCAN 带 neverForLocation 时，系统会按「应用是否持有位置权限」
+         决定是否过滤掉含位置信息的广播。缺它时的典型表现是"扫到一堆设备、却独缺目标设备"，
+         补上并授予后恢复完整结果（不授予也能扫，只是结果可能不全） -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- 蓝牙功能非必需，避免无蓝牙设备被应用市场过滤 -->
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
 
