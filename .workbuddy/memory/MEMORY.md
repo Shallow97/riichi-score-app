@@ -1,88 +1,73 @@
 # MEMORY.md · 日麻计分APP
 
-## 架构
-- `D:\日麻计分APP`；中文路径，gradle.properties 需 `android.overridePathCheck=true`
-- 房主手机跑 APK（内嵌 RiichiServer.java，端口 8765）；WebView 载 `http://127.0.0.1:8765/?host=1&lanip=<IP>`，WS 走 `/ws`；房主权威
-- 静态 SPA：index.html + css/style.css + js/{rules,storage,net,qrcode,jsqr,app}.js
-- ⚠️ **资源双份**：`prototype/` 与 `android/app/src/main/assets/`，改 prototype 后必须 cp 到 assets 再 assembleDebug
-- **加入他人对局**：输入房主 IP → WebView 导航到 `http://<IP>:8765/`，复用成员链路（协议零改动，localStorage 按 origin 隔离），返回键 goBack 回本机
-- **扫码加入**（2026-09-27）：房主二维码内容 = 成员访问地址；点 `#btn-scan-qr` 开 `#modal-scanqr`，`js/jsqr.js`(jsQR v1.4.0 离线) 逐帧解码 → 复用 `joinRemoteRoom`。Android 需 CAMERA + `onPermissionRequest` 放行 `RESOURCE_VIDEO_CAPTURE` + `setMediaPlaybackRequiresUserGesture(false)`。⚠️ 只有 `http://127.0.0.1` 是安全上下文（跳到房主页面后 `mediaDevices` 不存在）。取流 `ideal 1280x720`（真机确实给 720x1280、解码 45ms/帧），`SCAN_MAX_EDGE=1280`，自适应节拍；鲁棒性矩阵脚本在技能 `webview-camera-scan/scripts/`（实测 480×640 12/14 → 720×1280 13/14，可扫距离拉远 1.5×）
-- `window.JoinRoom{normalize,join,probe,parseScan,startScan,stopScan,setNavigate}`
+> 硬事实速查（**索引层**）。过程细节见日期日志（最新 `2026-10-10.md`）。
+> ⚠️ 本文件有注入体积上限，只放"每次都要知道"的；深度内容在专题文件里（见下）。
+> 只记已拍板结论，勿重新提议。
 
-## 工具链
-- JDK `D:/tools/jdk-17.0.2`（必须 export）；SDK `C:/Users/Administrator/AppData/Local/Android/Sdk`；`GRADLE_USER_HOME=D:/tools/gradle-home`；`android/` 下 `D:/tools/gradle-8.2/bin/gradle.bat assembleDebug --no-daemon` → cp 到根 `日麻计分APP-debug.apk`
-- adb 绝对路径（不在 PATH）；包名 `com.riichi.score`；`install -r` 同签名可覆盖；校验内嵌资源 `unzip -p <apk> assets/js/app.js | sha256sum`
-- ⚠️ Bash 沙箱里 `ADB=xxx && "$ADB" ...`（变量赋值+引用展开）会报 `sandbox-center cmd decisionRecord missing actual resource subject` 直接失败；可执行文件写全路径直呼即可（2026-09-29 实测）
-- ⚠️ **别拿 APK 字节数当信号**：同一套源码，增量打包与 `gradle clean assembleDebug` 出来的体积**可以差几十 KB**（实测同一内容：增量 181,973 / clean 165,804 / 更早 209,532），差异**全在非条目开销**（zip 结构 / 签名块 / 对齐填充），`unzip -v` 的条目名+原始大小+压缩大小**完全一致**。
-  判断 APK 是否"内容正确"要**比条目**，不是比总字节：`unzip -v <apk> | awk 'NF>=8 && $8!="Name"'` 归一化后 diff；或直接比对内嵌资源哈希。
-  **交付用 clean 出来的包**（更小、无累积打包开销）；用户若问"为什么体积变了"，先做条目 diff 再回答。
-- **装完 APK 的验证链**（一条命令串起来，adb server 会被回收）：`install -r` → `dumpsys package com.riichi.score | grep lastUpdateTime`（确认是刚装的）→ `monkey -p com.riichi.score -c android.intent.category.LAUNCHER 1` + `pidof`（确认不闪退）→ 技能脚本 `cdp-eval.js` 直查真机 DOM（元素/`getComputedStyle` 是否为新版）
-- 测试：`cd prototype/tests && NODE_PATH="C:/Users/Administrator/.workbuddy/binaries/node/workspace/node_modules" "C:/Users/Administrator/.workbuddy/binaries/node/versions/22.22.2-3/node.exe" <脚本>.js`
-  ⚠️ **跑测试前确认 8765 没被 serve.js 占用**：否则 net.js 连上 `ws://127.0.0.1:8765/ws`，重连定时器让 node 跑完不退出（`timeout` 返 124），易误判为定时器泄漏
-- **真机 CDP**：APP 已开 `setWebContentsDebuggingEnabled`。`adb shell cat /proc/net/unix | grep -o "@webview_devtools_remote_[0-9]*"` → `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>`（**localabstract 不带 @ 前缀**，@ 是 /proc/net/unix 的抽象套接字标记；带 @ 会 socket hang up）→ node+`ws`(`prototype/node_modules`) 发 `Runtime.evaluate`
-  ⚠️ adb 每条命令后 server 被回收 → forward 失效：**socket/forward/CDP 必须写在同一条 Bash 命令**
-  ⚠️ `input tap` 在 WebView 内不可靠（改用 CDP 注入）；但系统权限框只能用 tap，且该 tap 会穿透到 WebView
-- **真浏览器**（jsdom 无布局/canvas）：`cd prototype && node serve.js`（须后台任务方式起，`(cmd &)` 会被杀）→ chrome（`/c/Program Files/Google/Chrome/Application/chrome.exe`）无头或 CDP（`--remote-debugging-port=9333 --user-data-dir=D:/_x`）
-  ⚠️ curl 必须 `--noproxy '*'`；Git Bash 不可写 `/tmp`、`/dev/null`（exit 23）→ 输出写 `D:/`；`--window-size=393` 无头下最小 512px（不回流只裁图），准图用 CDP
-  ⚠️ **截"单机 UI"时千万别同时起 serve.js**：页面会被 8765 的 WS 接管成"成员"角色，`btn-create-game` 变异步（toast「对局由房主建立，请等待房主操作」），步骤脚本全乱 → 直接开 `file:///D:/日麻计分APP/prototype/index.html` 即单机，最省事。CDP 截图脚本模板：`prototype/tools/shot-settle-calc.js`（Emulation 393×852 dsf2 + `Page.captureScreenshot`）
-- 手机：小米14 HyperOS/Android14 `aed9c8e9`；HyperOS 上 `pm revoke CAMERA` 无效
+## 📂 专题文件（按需再读）
+- `.workbuddy/memory/场风盘-BLE.md` —— 墨水屏协议/推图铁律/扫描/连接状态机/四边版式/**首页推送二维码**。**动墨水屏代码前必读**
+- `.workbuddy/memory/联网同步与工具链.md` —— 协议 v2、操作权、结算弹窗链；构建/adb/CDP/测试命令
+- 早期日志（2026-09 ~ 2026-10-04）已归档到 `.workbuddy/archive-memory-2026-10-10/`，**不入库**；结论已并入本文件与专题文件
+
+## 架构
+- 房主手机跑 APK（内嵌 `RiichiServer.java`，:8765）；WebView 载 `http://127.0.0.1:8765/?host=1&lanip=<IP>`，WS `/ws`
+- ⚠️ WS 服务端三处同源，改一处必同步另两处：`prototype/js/net.js`、`prototype/serve.js`、`android/.../RiichiServer.java`
+- ⚠️ **资源双份**：`prototype/` ↔ `android/app/src/main/assets/`（APK 只认 `assets/js/*`）。改完 cp 到 assets、`diff -q`、再 assembleDebug
+- 加入他人对局：输入房主 IP → 导航 `http://<IP>:8765/`；返回键 goBack
+- 扫码：`#btn-scan-qr` → `#modal-scanqr` + `js/jsqr.js` → `joinRemoteRoom`；需 CAMERA 权限 + 放行 `RESOURCE_VIDEO_CAPTURE` + `setMediaPlaybackRequiresUserGesture(false)`。⚠️ 只有 `http://127.0.0.1` 是安全上下文
+- SPA 模块：`rules/storage/net/qrcode/jsqr/sfx/tagpush/app`；独立页 `tag.html`；`window.JoinRoom{...}`
+- 中文路径 → `gradle.properties` 需 `android.overridePathCheck=true`
+
+## 场风盘墨水屏 · 只需记住这几条（其余见专题）
+- 4.2″ 三色 400×300（UC8176，驱动 **0x03**）；名 `NRF_EPD_2`、MAC `<你的设备MAC>`
+- 🔴 **USB 只充电不通信**；通信靠 BLE + 机身按键；**默认蓝牙关**（长按按键→灯亮=开）；**LED 常亮不闪 ≈ 卡在刷屏**
+- 🔴 **黑白快刷已彻底删除（用户要求）**：改 PSR/CDI/LUT 会刷白屏 + 固件失联。**勿再引入**
+- 🔴 **推图每包必须带 `0x30`**（只发标志位会被固件当命令 ⇒ 引脚被写坏/画面不进显存）
+- 🔴 **INIT 一律裸发**（带参会落盘改型号）；`epd_init()` 内含复位+上电 ⇒ "没上电"不是刷不动的原因
+- 🔴 **扫描绝不能按 Service UUID 过滤**（UUID 在 scan response，会被滤光）；三个 🔴 判别法则见专题
+- 🔴 **`app.js` 是 IIFE**：`showPage`/`einkLog`/`buildQrPngBase64` 等**不是全局**
+- 推送节流：`EinkBoardManager.THROTTLE_MS`（现 **1s**），只在原生侧；触发点＝立直宣言/取消、局结算、流局结算；「立即推送」不受限
+- 首页「推送二维码到场风盘」：`#btn-push-qr` 在 `#net-room-qr` 内（无二维码随卡片隐藏），仅已连场风盘可点；推 `http://<房主IP>:8765/` 的二维码
+
+## 计分口径（用户规定，勿改）
+- 守恒：总分 = 玩家分和 + 供托池（四人 100000 / 三人 105000）
+- 本场费：荣和一人付 `300N`；自摸每家付 `100N`（三人缺北自摸损：收 200N、2 家各付 100N）
+- 本场推进：仅闲家和归零，流局或庄家和 +1（`advanceRound` 用 `isFlow` 解耦）
+- **最后一局连庄例外**：南/西场最后局庄家和（多响含庄），结算后庄家**不是全场最高（平分也算）** → 不终局、连庄（局号不变、本场+1），**优先于西入"≥阈值即结束"**。实现：`checkRoundEnd` 开头拦截（`dealer.points <= maxOthers` 返 null）。测试 `dealer-win-continue-test.js`
+- 荒牌流局未听罚符：总转移固定 **三人 2000 / 四人 3000**（听者平分收、未听平分付），勿写成 ×人数；`notenBappuTotal()` 驱动三处文案
+- 多响：供托+本场加算归「放铳者逆时针第一个赢家」`pickKyotakuReceiver`
+- 逐局 delta：`delta=结算后分−快照分−(本局立直?1000:0)`，**必须在 applyRoundResult 第 4 步清立直状态前读 `p.riichi`**；老记录无此字段则原样显示
+- `Rules.calcScore(han,fu,seat,playerCount=4)`：番 1~4 `base=fu*2^(han+2)`，≥2000 封满贯，**不开切上满贯**；返回 `ron`/`tsumoKo`/`tsumoOya`(亲自摸 null)/`tsumo`/`tsumoNote`。⚠️ **回填只用 `tsumoKo`/`tsumoOya`**
 
 ## 关键坑
 - Android14 闪退：targetSdk34 + `foregroundServiceType="dataSync"` 须同声明 `FOREGROUND_SERVICE_DATA_SYNC`
-- readHttpRequest 缺 `lineBuf.write(c)` → method/path=null，CSS/JS/WS 全失效
-- 局域网 IP 勿用 `WifiManager.getIpAddress()`（双开/蜂窝返 0）→ NetworkInterface 遍历，优先 `wlan/eth/en/ap`
-- 首次扫码授权那一记 tap 会穿透遮罩关掉扫码窗 → `modal-scanqr` 在 `!scanStream` 时忽略"点空白关闭"
-- ⚠️ **`.btn + .btn { margin-top:10px }` 在 flex 行里会害人**：行内相邻的两个 `.btn` 都会吃到这个外边距，
-  `align-items:stretch` 下容器交叉尺寸 = max(固有高 + margin)，于是**后一个按钮被顶下 10px 且比前一个矮 10px**
-  （表现为"两个按钮一高一矮、顶边不齐"）。已踩两次：`.action-grid`（style.css:509 注释）、`.net-joinroom-row`。
-  行内多按钮一律显式 `margin-top: 0` + 统一 `display/align-items/justify-content/padding`（扫码这类带图标的，
-  只额外给 `gap`，其余盒模型与邻按钮完全一致）。**不要靠 `padding` 撑高——靠内容居中撑高才稳。**
-
-## 版本管理（GitHub，2026-09-28 建立）
-- 远端 **`https://github.com/Shallow97/riichi-score-app`（私有）**，分支 `main`，首提交 `aaa899e`（90 文件 / 2.92 MB）
-- 身份：仓库级 `user.name=Shallow97`、`user.email=Shallow97@users.noreply.github.com`
-- ⚠️ **对 github.com 必须走 Clash `127.0.0.1:7897`**：沙箱内被沙箱代理拦（CONNECT 502，只放行 `api.github.com`）；沙箱外直连时通时断（多 IP 轮询）。
-  仓库级已设 `http.proxy`/`https.proxy`，另加 `-c http.version=HTTP/1.1`（直连时曾报 `Empty reply from server`）
-- 凭据：GCM（PortableGit 自带 2.9.0）已 `github login` 账号 Shallow97 → Windows 凭据管理器；`credential.helper=helper-selector` 自动取到，**不要**把 token 写进 remote URL
-- ⚠️ **GCM 的授权流程必须在沙箱外跑**（.NET 代理解析优先系统设置，不吃 `HTTPS_PROXY` 覆盖）；`--device --no-ui` 无 TTY 时静默挂住，用 `--browser`
-- 入库范围：`.apk`／`node_modules/`／`android/**/build/`／`.workbuddy/{tmp,scratch}/` 已忽略；**保留** `.workbuddy/memory/` 与 `design-preview/`
-- 核对远端内容别用"文件总数"（tree 节点会多算）：`GET /git/trees/main?recursive=1` 后**过滤 `type=="blob"`** 再与 `git ls-files` diff
-
-## 计分口径（用户规定，勿改）
-- 守恒：场上总分 = 玩家分和 + 供托池（四人 100000 / 三人 105000）
-- 本场费：荣和一人付 `300N`；自摸每家付 `100N`（三人缺北自摸损：收 200N、2 家各付 100N）
-- 本场推进：仅闲家和牌归零，流局或庄家和 +1（`advanceRound` 用 `isFlow` 解耦）
-- **最后一局连庄例外（2026-09-28 用户定）**：南场/西场最后局庄家和牌（多响含庄算），结算后庄家分数**不是全场最高（平分也算不是最高，仅独占最高才终局）** → 不终局、连庄（局号不变、本场+1），**优先级高于西入"≥阈值即结束"**。实现：`checkRoundEnd(game, result)` 开头拦截，`dealer.points <= maxOthers` 返 null；终局后 `applyRoundResult` step6 直接 return，不再推进庄家/局号。测试 `dealer-win-continue-test.js`
-- 荒牌流局未听罚符：总转移固定 **三人 2000 / 四人 3000**（听者平分收、未听平分付），勿写成 ×人数；`notenBappuTotal()` 驱动三处文案
-- 多响：供托与本场加算归「放铳者逆时针第一个赢家」`pickKyotakuReceiver`
-- 逐局 delta：立直 -1000 记在立直局、供托 +N×1000 记在收走局（跨局相加+池中余额=0）；`delta=结算后分−快照分−(本局立直?1000:0)`，**必须在 applyRoundResult 第 4 步清立直状态前读 `p.riichi`**；老记录无该字段则原样显示
-
-## 其它模块
-- 手动修正（均 pushSnapshot 可撤）：`adjustRound`（含 `dealerIndexForRound` 反推庄家）、`adjustKyotaku`、`setHonba`
-- 操作权：服务器把 host 当普通 ClientConn；net.js `iAmOperator` 恒 false，联网统一 request-action；`OP_MODALS` 全关 → 微任务 releaseAction
-- 自摸：填单位应付额程序复制（`.tsumo-koha`/`.tsumo-oya`，三人缺北 koha 只 1 闲），**单段式**（2026-09-28 用户定）：填额弹窗「确认结算」直接入账，核对明细弹窗已删除（`#modal-tsumo-review` 不存在，勿引用）
-- `Rules.calcScore(han, fu, seat, playerCount=4)`：番 1~4 `base=fu*2^(han+2)`，≥2000 封满贯，**不开切上满贯**。返回 `ron` / `tsumoKo`(每位闲家应付) / `tsumoOya`(庄家应付，亲自摸为 null) / `tsumo`(总额) / `tsumoNote`。
-  ⚠️ **回填一律用 `tsumoKo`/`tsumoOya` 分类值，勿用 `tsumo` 总额**；`tsumo` 按第 4 参人数折（三缺北"缺的那家"那份不取 → 闲自摸 ko×1+oya、庄自摸 ko×2），不传参默认四人（向后兼容）。app.js 的 `updateCalc`/`onCalcClosed` 都传 `game.players.length`
-- ⚠️ **结算有两条互不相干的弹窗链**（加功能必须两条都改，只改一条 = 界面上"按钮不存在"）：
-  - 荣和：`modal-settle-type`→`pay`→`recv`→`amount`（单值 `#settle-amount`，放铳者付，`#btn-settle-confirm` 文案=「确认结算」）
-  - 自摸：`modal-tsumo`(选自摸者)→`tsumo-amounts`(分类填额，`#btn-tsumo-confirm` 文案=「确认结算」→直接 finalizeSettlement)
-- **番符表联动**（2026-09-27）：`#btn-settle-calc` / `#btn-tsumo-calc` → `openCalcLinked(seat,name,wind,mode)` → 打开 `#modal-calc`；座位按 `isDealerByName(和牌者)` 锁 oya/ko，`calcLink={seat,receiverName,mode:'ron'|'tsumo'}` 非空即锁定，关闭时 `onCalcClosed()` 按 mode 回填（ron→`#settle-amount`；tsumo→`.tsumo-shared` 或 `.tsumo-koha`+`.tsumo-oya`）。⚠️ 番符表**叠层不切换**（`modal-calc` 不在 `OP_MODALS`，切换会误释放操作权）；⚠️ `#modal-calc` 需 `z-index:150`（两个填额弹窗 DOM 都比它靠后，同为 100 会压住它）；座位身份用 `isDealerByName` 推导，勿读 `wind`（连庄/局数旋转下 wind 会变）
-- `prototype/tools/shot-{settle,tsumo}-calc.js`：真 Chrome CDP 393×852 截图骨架，改别的界面时复制后替换中间 `ev(...)` 步骤
-- view-lock 只改渲染 class；`bindAll` 有 `__appBound` 幂等守卫
-- **音效（2026-09-29）**：`js/sfx.js`，`window.Sfx.riichi()`。base64 data-URI 内嵌 WAV（绕开服务器 mime 白名单，mp3/ogg 会被当 text/plain）；来源=用户自录（勿换成商用游戏音频，版权）。触发点仅 renderRiichiPick 点击（`action==='riichi'` 才响、取消不响；弹窗只在操作权持有者设备打开 → 仅操作者响）。`typeof Audio` 守卫保 jsdom。加新音效：处理 WAV→base64 进 sfx.js→`Sfx.xxx()`→调用点两处无需动协议
+- 局域网 IP 勿用 `WifiManager.getIpAddress()` → NetworkInterface 遍历，优先 `wlan/eth/en/ap`
+- ⚠️ `.btn + .btn{margin-top:10px}` 在 flex 行里害人 → 行内多按钮显式 `margin-top:0`
+- ⚠️ Bash 里 `VAR=xxx && "$VAR" …` 会报 `sandbox-center cmd decisionRecord` → **写全路径直呼**
 
 ## UI 约束
-- 面向固定窄屏 ~393px（无 `@media`）；index.html 4 `.page`（mode/setup/main/history）+ **26** 个 `#modal-*`（tsumo-review 已删）
-- ⚠️ 改版真正成本是 tests/ 上千处 DOM 断言（唯 `view-lock-test.js` 读 style.css 的 `.modal-view .view-actions .btn`）→ 不改 class 名/HTML 结构则全绿
-- 视觉稿/三方案在 `design-preview/`；现状截图在 `design-preview/audit/`
-- **外观体系（2026-09-28 落地，用户批准①②③⑤+④无徽标）**：圆角 3 档 10/14/20px；阴影 `--shadow-1`(小件)/`--shadow-2`(弹窗悬浮) 两档；字重最多 700（800/900 已清除）；`--text-dim #5F6E76`、`--gold #8F6B12`、`--danger-text #C13E2E`（危险**小字**用，负分大数字仍 `--danger #D94F3D`）；按钮一套语言=描边环+轻投影（厚底拟物已删，按压 scale(.98)）；`#toast` 在**底部**（曾压北家）；弹窗动画（2026-09-29 减晃版）：仅"从主界面新开"播 overlayIn/modalIn（`--modal-dur:.12s`、modalIn 无位移 scale .97）；**链内推进/叠层打开由 app.js 判定加 `.instant` 零动画**（判据=150ms 内关过弹窗或已有弹窗开着，因链内关旧开新两种顺序都有）；`prefers-reduced-motion` 下全禁；close-x 44px 热区、seat-chip min-height 44；座位卡 pts 22px tabular-nums 为第一焦点、wind 14px、局号 16px。**东风位即庄家（用户定），不加庄家徽标**。**夜间主题：用户 2026-09-30 拍板不考虑，勿再提议。**
+- 固定窄屏 ~393px（无 `@media`）；**5** 个 `.page`（mode/setup/main/history/eink）+ **26** 个 `#modal-*`；⚠️ 改版成本主要是 tests/ 上千处 DOM 断言（唯 `view-lock-test.js` 读 style.css）→ 不动 class/HTML 结构则全绿
+- 外观：圆角 10/14/20px；字重≤700；`--text-dim #5F6E76`、`--gold #8F6B12`、`--danger-text #C13E2E`；按钮=描边环+轻投影（按压 scale .98）；`#toast` 在**底部**；`.btn:disabled{opacity:.45}`
+- 组件色**已全部 token 化** → 改主题只动 `:root`
+- 弹窗动画：只有"从主界面新开"播 overlayIn/modalIn（`.12s`）；链内推进/叠层加 `.instant`（判据=150ms 内关过弹窗或已有弹窗开着）；`prefers-reduced-motion` 全禁
+- 座位卡 pts 22px tabular-nums 为第一焦点、wind 14px、局号 16px；close-x 44px 热区；**东风位即庄家，不加庄家徽标**
+- 四角按钮用线性 SVG；**#btn-help「？」保留汉字字形**（translateX 5px 是滑块校准，勿动）；`#btn-tsumo-ron` 绿、`#btn-end` 幽灵描边深红
+- 空态 `.empty-state`/`.empty-riichi .er-bar`；round-log 空态文案**必须保留「尚无已结算的对局」**
+- 视觉稿 `design-preview/`；复核 `tools/shot-visual-opt.js`（勿起 serve.js）、`tools/check-device-visual.js`；**夜间主题用户已拍板不考虑，勿再提议**
 
-## 视觉优化 A~G（2026-09-30 落地，impeccable 审查驱动，方案稿 design-preview/视觉优化方案-2026-09-30.html）
-- **组件色已全部 token 化**（值不变只挪位置）：`--wind-东南西北`/`--riichi-border(-dot)`/`--die-ink(-red)`/`--table-btn-bg(-hover)`/`--end-banner-bg`/`--toast-bg`/`--notice-*`/`--net-off-bg`/`--scan-frame`；改主题相关颜色只动 :root
-- 一致性修复：`.pts.neg2`（0分）旧硬编码 #C9992E → var(--gold)；`var(--card,·)` 不存在的 token → var(--surface)
-- 四角按钮图标统一线性 SVG：#btn-dice（骰面5点）、#btn-calc（计算器）已换内联 SVG；**#btn-help「？」保留汉字字形**（translateX 5px 是滑块校准的，勿动）；tests 按 id 断言不锁按钮内容，已验证
-- 按钮主次（纯 id CSS，未改 class/DOM）：`#btn-tsumo-ron` 主按钮绿、`#btn-end` 幽灵描边深红（--danger-text）
-- 顶栏热区：`.topbar .back` padding 14px/10px + 负 margin 抵消（视觉位置不变，热区 47px）
-- 空态引导：`.empty-state`/`.empty-riichi .er-bar`（迷你立直棒）；app.js 两处 innerHTML（round-log 空态文案**必须保留子串「尚无已结算的对局」**，round-log-test 断言）
-- 小字：`.you-mark` 9→11px、`.seat .meta` 10→10.5px
-- 复核工具：`prototype/tools/shot-visual-opt.js`（Chrome CDP 393×852 全套断言+截图，勿起 serve.js 用 file://）；`tools/check-device-visual.js`（真机，先 `install -r` + monkey 起活再 forward）。本轮 22/22 jsdom 全绿、Chrome 端全 PASS、真机 6/6 PASS，APK 已装真机（21:18）
+## 版本管理（GitHub）
+- `https://github.com/Shallow97/riichi-score-app`，分支 `main`（默认）与 `eink-board`（墨水屏开发分支）；仓库级 `user.name=Shallow97`
+- ⚠️ github.com 走 Clash `127.0.0.1:7897`（沙箱内被拦 502）；已设仓库级 proxy + `http.version=HTTP/1.1`
+- 凭据：GCM（Shallow97）→ Windows 凭据管理器；**勿把 token 写进 remote URL**；GCM 授权须**沙箱外**
+- ⚠️ **系统级 git 里的 `helper-selector` 会导致推送弹窗**（2026-10-10 已从 `D:/workbuddy/resources/vendor/PortableGit/etc/gitconfig` 移除）。
+  凭据链只剩用户级 GCM。**WorkBuddy 升级可能把它带回来**，届时用 `git config --system --unset-all credential.helper` 再清。
+- **开源状态（2026-10-10）**：MIT 许可 + README 已改写为公开版；已剔除硬编码本机路径、真实 MAC、内网 IP。
+  仓库同时保留 `prototype/` 与 `assets/` 两份前端资源（开源可复现打包），改动仍需同步两份。
+
+## 测试与构建命令
+- 跑测试：`cd prototype && npm test`（20 个脚本，无需服务器）；`npm test -- --server` 连 net 系列一起跑（自动起 serve.js）
+- ⚠️ 测试需 `jsdom`（devDep）+ `ws`（dep），本机 jsdom 在受管 workspace，跑测试前设
+  `NODE_PATH=C:/Users/Administrator/.workbuddy/binaries/node/workspace/node_modules`
+- ⚠️ `tests/run-all.js` 用异步 `spawn` 而非 `spawnSync`：本机 cmd.exe 在沙箱下会 `EBUSY`，`shell:true` 走不通
+- 打包：`cd android && gradle assembleDebug`；中文路径需 `gradle.properties` 的 `android.overridePathCheck=true`
+- 校验 APK 内资源：`unzip -p app-debug.apk assets/js/app.js | sha256sum`（别看字节数）
