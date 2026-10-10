@@ -17,7 +17,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const OUT = 'D:/日麻计分APP/.workbuddy/tmp';
+const OUT = path.resolve(__dirname, '..', '..', '.workbuddy', 'tmp');
 fs.mkdirSync(OUT, { recursive: true });
 
 function getJson(url) {
@@ -106,17 +106,25 @@ const STATE_B = mkGame({ wind: '东', num: 2 }, 1, 1000,
   console.log('tag页日志:', JSON.stringify(logTxt.trim()));
   if (logTxt.indexOf('已连接对局服务器') < 0) throw new Error('tag 页没连上 WS（服务器没起？）');
 
-  // 3. 伪装房主：连接须带 ?host=1（serve.js 只认它认定的房主/操作权者发的 host-state）
+  // 3. 伪装房主：连接须带 ?host=1（协议 v2：提交用 commit{opId,baseSeq,state}，
+  //    只认服务器认定的房主/操作权者的提交）
   const fake = new WebSocket('ws://127.0.0.1:8765/ws?host=1');
+  let hostSeq = 0;
+  fake.on('message', (d) => {
+    try {
+      const m = JSON.parse(d.toString());
+      if (m.type === 'welcome' || m.type === 'ack' || m.type === 'state') hostSeq = m.seq;
+    } catch (e) {}
+  });
   await new Promise((res, rej) => { fake.onopen = res; fake.onerror = () => rej(new Error('伪装房主 WS 连接失败')); });
   fake.send(JSON.stringify({ type: 'set-name', name: '测试房主' }));
   await sleep(300);
 
-  fake.send(JSON.stringify({ type: 'host-state', state: JSON.stringify(STATE_A) }));
+  fake.send(JSON.stringify({ type: 'commit', opId: 'tag-a', baseSeq: hostSeq, state: JSON.stringify(STATE_A) }));
   await sleep(800);
   await saveCanvas('11-tag-live-A.png');
 
-  fake.send(JSON.stringify({ type: 'host-state', state: JSON.stringify(STATE_B) }));
+  fake.send(JSON.stringify({ type: 'commit', opId: 'tag-b', baseSeq: hostSeq, state: JSON.stringify(STATE_B) }));
   await sleep(800);
   await saveCanvas('12-tag-live-B.png');
 

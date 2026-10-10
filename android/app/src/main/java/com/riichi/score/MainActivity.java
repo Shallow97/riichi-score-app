@@ -4,12 +4,17 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.text.format.Formatter;
 import android.view.View;
 import android.webkit.WebChromeClient;
@@ -50,6 +55,13 @@ public class MainActivity extends Activity {
 
     /** 场风盘蓝牙运行时权限请求码 */
     private static final int REQ_BT = 1003;
+
+    /** 位置权限单独请求码：只为"让系统不过滤含位置信息的广播"，被拒/不回执都不影响蓝牙主流程 */
+    private static final int REQ_LOC = 1004;
+
+    /** 轻量本地偏好（目前仅用于"电池优化引导只弹一次"） */
+    private static final String PREFS_NAME = "riichi_prefs";
+    private static final String KEY_ASKED_BATTERY = "asked_battery_opt";
 
     private WebView webView;
     private ProgressBar progressBar;
@@ -147,6 +159,13 @@ public class MainActivity extends Activity {
         // 扫码预览：<video> 播放 MediaStream 不应依赖用户手势，否则部分机型上会黑屏
         s.setMediaPlaybackRequiresUserGesture(false);
 
+        // 锁屏保活（配合 onPause 不做暂停）：声明渲染进程为"重要优先级"，
+        // 且不可见时也不降级 waiver → 避免 Chromium 对后台页面节流 JS 定时器，
+        // 让心跳/重连定时器在息屏期间照常触发。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
+        }
+
         // 场风盘蓝牙控制：JS ↔ 原生桥（页面通过 window.NativeBridge 调用）
         EinkBoardManager.getInstance().init(getApplicationContext(), einkListener);
         webView.addJavascriptInterface(new NativeBridge(), "NativeBridge");
@@ -198,8 +217,13 @@ public class MainActivity extends Activity {
 
     /** 场风盘蓝牙：Android 12 (API 31)+ 需要 BLUETOOTH_CONNECT/SCAN 运行时权限 */
     private void requestBlePermission() {
+        boolean locOk = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED;
         if (Build.VERSION.SDK_INT < 31) {
-            EinkBoardManager.getInstance().setPermissionOk();
+            // Android 11 及以下：BLE 扫描**依赖位置权限**。
+            // （旧代码在此分支直接 setPermissionOk() 放行，从不申请位置权限 —— 等于老设备必然扫不到）
+            if (locOk) EinkBoardManager.getInstance().setPermissionOk();
+            else requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, REQ_BT);
             return;
         }
         boolean connectOk = checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)
@@ -208,10 +232,18 @@ public class MainActivity extends Activity {
                 == PackageManager.PERMISSION_GRANTED;
         if (connectOk && scanOk) {
             EinkBoardManager.getInstance().setPermissionOk();
-        } else {
-            requestPermissions(new String[]{
-                    Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN}, REQ_BT);
+            // 蓝牙两项已就绪：位置权限**单独**补请一次（REQ_LOC 不回执任何蓝牙动作）。
+            // 它可能让系统放行此前被过滤的广播 —— 症状是"扫到一堆设备却独缺目标设备"。
+            if (!locOk) {
+                requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, REQ_LOC);
+            }
+            return;
         }
+        java.util.ArrayList<String> need = new java.util.ArrayList<>();
+        need.add(Manifest.permission.BLUETOOTH_CONNECT);
+        need.add(Manifest.permission.BLUETOOTH_SCAN);
+        if (!locOk) need.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        requestPermissions(need.toArray(new String[0]), REQ_BT);
     }
 
     /** 场风盘事件 → 转发到页面（window.EinkNative.onStatus） */
@@ -240,15 +272,23 @@ public class MainActivity extends Activity {
         public void einkConnect() {
             runOnUiThread(new Runnable() {
                 @Override public void run() {
-                    if (Build.VERSION.SDK_INT >= 31
-                            && (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
-                            || checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED)) {
+                    // Android 11 及以下靠位置权限扫描；12+ 靠 BLUETOOTH_SCAN/CONNECT。
+                    // 旧代码只看 12+ 的两项，SD<31 时直接开扫 —— 老设备必然零结果。
+                    boolean need = Build.VERSION.SDK_INT < 31
+                            ? checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                                    != PackageManager.PERMISSION_GRANTED
+                            : (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)
+                                    != PackageManager.PERMISSION_GRANTED
+                               || checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN)
+                                    != PackageManager.PERMISSION_GRANTED);
+                    if (need) {
                         pendingBtAction = "scan";
-                        requestPermissions(new String[]{
-                                Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN}, REQ_BT);
+                        requestBlePermission();   // 内部会连带补请位置权限（可能减少系统对广播的过滤）
                         return;
                     }
-                    EinkBoardManager.getInstance().setPermissionOk();
+                    // 扫描路径不自动连"记住的设备"：并发直连会让控制器暂停 LE 扫描，
+                    // 扫描结果残缺（真机实测：每次都独缺目标设备）
+                    EinkBoardManager.getInstance().setPermissionOk(false);
                     EinkBoardManager.getInstance().startScan();
                 }
             });
@@ -258,6 +298,18 @@ public class MainActivity extends Activity {
         @android.webkit.JavascriptInterface
         public void einkConnectAddr(String address) {
             EinkBoardManager.getInstance().connect(address);
+        }
+
+        /** 提前结束扫描（页面「停止扫描」按钮） */
+        @android.webkit.JavascriptInterface
+        public void einkStopScan() {
+            EinkBoardManager.getInstance().stopScan();
+        }
+
+        /** 蓝牙诊断：输出权限 / 蓝牙开关 / 扫描器 / 定位服务 / 已配对设备等扫描前提 */
+        @android.webkit.JavascriptInterface
+        public void einkDiagnose() {
+            EinkBoardManager.getInstance().diagnose();
         }
 
         @android.webkit.JavascriptInterface
@@ -273,8 +325,7 @@ public class MainActivity extends Activity {
                     if (Build.VERSION.SDK_INT >= 31
                             && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
                         pendingBtAction = "auto";
-                        requestPermissions(new String[]{
-                                Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN}, REQ_BT);
+                        requestBlePermission();
                         return;
                     }
                     EinkBoardManager.getInstance().setPermissionOk();
@@ -288,17 +339,6 @@ public class MainActivity extends Activity {
             EinkBoardManager.getInstance().setBleAlwaysOn(on);
         }
 
-        /** 黑白快刷开关（默认开；关闭=三色全刷） */
-        @android.webkit.JavascriptInterface
-        public void einkSetFastMode(boolean on) {
-            EinkBoardManager.getInstance().setFastMode(on);
-        }
-
-        @android.webkit.JavascriptInterface
-        public boolean einkIsFastMode() {
-            return EinkBoardManager.getInstance().isFastMode();
-        }
-
         /** 是否已记住设备 */
         @android.webkit.JavascriptInterface
         public boolean einkHasSaved() {
@@ -310,6 +350,42 @@ public class MainActivity extends Activity {
         public void pushTag(String dataJson, boolean immediate) {
             EinkBoardManager.getInstance().requestPush(dataJson, immediate);
         }
+
+        /** 当前是否已连接场风盘（首页「推送二维码」按钮据此置灰/点亮） */
+        @android.webkit.JavascriptInterface
+        public boolean einkIsConnected() {
+            return EinkBoardManager.getInstance().isConnected();
+        }
+
+        /** 推送二维码（JS 侧生成的 400×300 PNG，base64）到场风盘墨水屏 */
+        @android.webkit.JavascriptInterface
+        public void einkPushQr(String base64Png) {
+            EinkBoardManager.getInstance().pushQrPng(base64Png);
+        }
+
+        /** 面板自检：清屏（固件 CLEAR，不经位图/标志位编码，用于验证屏与刷新是否正常） */
+        @android.webkit.JavascriptInterface
+        public void einkClearPanel() {
+            EinkBoardManager.getInstance().clearPanel();
+        }
+
+        /** 测试图案推送（不依赖对局数据） */
+        @android.webkit.JavascriptInterface
+        public void einkTestPattern() {
+            EinkBoardManager.getInstance().pushTestPattern();
+        }
+
+        /** 修复引脚：把正确的引脚串回写设备 flash（仅在被写坏时用） */
+        @android.webkit.JavascriptInterface
+        public void einkRepairPins() {
+            EinkBoardManager.getInstance().repairPins();
+        }
+
+        /** 设备自报的引脚串（空 = 未收到配置包） */
+        @android.webkit.JavascriptInterface
+        public String einkDevicePins() {
+            return EinkBoardManager.getInstance().devicePins();
+        }
     }
 
     @Override
@@ -317,10 +393,20 @@ public class MainActivity extends Activity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         // 场风盘蓝牙权限：授予后执行挂起的动作（扫描 / 自动连记住设备）
         if (requestCode == REQ_BT) {
-            boolean granted = true;
-            for (int r : grantResults) if (r != PackageManager.PERMISSION_GRANTED) granted = false;
-            if (granted) {
-                EinkBoardManager.getInstance().setPermissionOk();
+            // 只按**蓝牙两项**判定：位置权限只是"帮系统不过滤广播"的辅助项，即便被拒也不该
+            // 阻断扫描（Android 12+ 的 neverForLocation 本就允许无位置权限扫描）。
+            // 旧写法"任何一项被拒即全部失败"，会在用户拒绝位置权限时误报"蓝牙权限被拒绝"。
+            boolean bleOk = true;
+            for (int i = 0; i < permissions.length && i < grantResults.length; i++) {
+                String p = permissions[i];
+                if (Manifest.permission.BLUETOOTH_CONNECT.equals(p)
+                        || Manifest.permission.BLUETOOTH_SCAN.equals(p)) {
+                    if (grantResults[i] != PackageManager.PERMISSION_GRANTED) bleOk = false;
+                }
+            }
+            if (bleOk) {
+                // 本次挂起动作是"扫描"时不要顺带自动连设备（见 NativeBridge.einkConnect）
+                EinkBoardManager.getInstance().setPermissionOk(!"scan".equals(pendingBtAction));
                 if ("scan".equals(pendingBtAction)) EinkBoardManager.getInstance().startScan();
             } else {
                 einkListener.onEvent("log", "蓝牙权限被拒绝，无法连接场风盘");
@@ -451,7 +537,7 @@ public class MainActivity extends Activity {
                     android.util.Log.e("RiichiScore", "兜底服务器错误: " + message);
                 }
                 @Override public void onMemberCount(int count) {}
-            });
+            }, new java.io.File(getFilesDir(), "room_state.json"));
             fallbackServer.start();
         } catch (Exception e) {
             android.util.Log.e("RiichiScore", "兜底服务器启动失败", e);
@@ -476,6 +562,9 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 progressBar.setVisibility(View.GONE);
+                // 只在"本机房主页面"加载完成时做电池优化引导；
+                // 跳到别人的房主页面（成员视角）不该打扰用户
+                if (!isRemoteUrl(url)) maybeRequestIgnoreBatteryOptimizations();
             }
 
             @Override
@@ -534,13 +623,91 @@ public class MainActivity extends Activity {
         return !(u.contains("127.0.0.1") || u.contains("localhost"));
     }
 
+    /**
+     * 电池优化白名单引导（仅在本机房主页面首次加载时弹一次）。
+     *
+     * 为什么需要：本 App 当房主时要靠前台服务 + WakeLock + WifiLock 在锁屏后长期服务。
+     * 但国产 ROM 常有独立的"省电策略/后台冻结"，会在息屏一段时间后把进程冷冻，
+     * 此时任何锁都救不回来 —— 唯一可靠办法是让用户把应用加入"不受电池优化限制"白名单。
+     *
+     * 交互：先弹自己的说明框（用户知情），确认后才打开系统确认框；
+     * 已忽略 / 非 M+ / 已问过 一律直接返回，不反复打扰。
+     */
+    private void maybeRequestIgnoreBatteryOptimizations() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;
+        try {
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (pm == null || pm.isIgnoringBatteryOptimizations(getPackageName())) return;
+        } catch (Exception e) {
+            return;
+        }
+        SharedPreferences sp = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        if (sp.getBoolean(KEY_ASKED_BATTERY, false)) return;
+        sp.edit().putBoolean(KEY_ASKED_BATTERY, true).apply();
+
+        new AlertDialog.Builder(this)
+                .setTitle("锁屏保活设置")
+                .setMessage(
+                        "你是本桌房主时，App 需要在你锁屏后继续为其他玩家提供联机服务。\n\n"
+                        + "点「去设置」后请在系统弹窗中选择「允许」，让本应用不受电池优化限制；"
+                        + "否则部分手机在息屏一段时间后会冻结后台，其他玩家会掉线。\n\n"
+                        + "小米/华为等机型若还有「自启动」「省电策略」选项，建议一并设为允许/无限制。")
+                .setPositiveButton("去设置", (d, w) -> openBatteryOptimizationSettings())
+                .setNegativeButton("以后再说", null)
+                .show();
+    }
+
+    /** 打开系统"不受电池优化限制"确认框；机型不支持时回退到电池优化设置列表页 */
+    @SuppressLint("BatteryLife")
+    private void openBatteryOptimizationSettings() {
+        try {
+            Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+            i.setData(Uri.parse("package:" + getPackageName()));
+            startActivity(i);
+        } catch (Exception e) {
+            try {
+                startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+            } catch (Exception e2) {
+                android.util.Log.e("RiichiScore", "无法打开电池优化设置", e2);
+            }
+        }
+    }
+
+    /**
+     * 返回键：
+     *  1) WebView 有历史（例如从"加入他人对局"跳到了房主页面）→ 先回退，回到本机界面；
+     *  2) 否则要退出 Activity，即房主的页面连接会断开。
+     *     房主链接断开后服务器仍在运行、房间与分数都保留，但"流局/修正/撤回/结束"
+     *     四个房主专属操作全桌都点不了 —— 对局进行中误触代价太大，故先二次确认。
+     */
     @Override
     public void onBackPressed() {
-        if (webView.canGoBack()) {
+        if (webView != null && webView.canGoBack()) {
             webView.goBack();
-        } else {
-            super.onBackPressed();
+            return;
         }
+        if (webView == null) {
+            super.onBackPressed();
+            return;
+        }
+        // 页面里 window.__netHostBusy() 判断"房主端对局进行中"（异步取值后再决定）
+        webView.evaluateJavascript(
+                "(function(){try{return !!(window.__netHostBusy&&window.__netHostBusy());}catch(e){return false;}})()",
+                value -> {
+                    if ("true".equals(value)) {
+                        new AlertDialog.Builder(MainActivity.this)
+                                .setTitle("离开对局？")
+                                .setMessage(
+                                        "你是本桌房主。离开后服务器仍在运行、分数不会丢失，"
+                                        + "但其他玩家将暂时无法进行「流局 / 修正 / 撤回 / 结束」，"
+                                        + "直到你的页面回来。\n\n确定要退出吗？")
+                                .setPositiveButton("退出", (d, w) -> finish())
+                                .setNegativeButton("留在对局", null)
+                                .show();
+                    } else {
+                        finish();
+                    }
+                });
     }
 
     @Override
@@ -549,10 +716,20 @@ public class MainActivity extends Activity {
         if (webView != null) webView.onResume();
     }
 
+    /**
+     * ⚠️ 不调用 webView.onPause()。
+     *
+     * 本 App 的 WebView 是"房主服务器页面"本体：联网同步的心跳（10s ping）与掉线重连
+     * 定时器都跑在页面 JS 里。webView.onPause() 会暂停 WebView 的渲染与 JS 定时器 ——
+     * 锁屏时实测 100ms 定时器从 ~34 次/3s 掉到 ~4 次/3s（约 12%），心跳随之失去意义、
+     * 成员侧会看到房主"假掉线"。故这里刻意不做任何暂停，让页面在息屏/后台期间照常运行。
+     *
+     * 配套：onCreate 里的 setRendererPriorityPolicy(RENDERER_PRIORITY_IMPORTANT, false)，
+     * 声明渲染进程"不可见时也不降级"，避免 Chromium 对后台页面做定时器节流。
+     */
     @Override
     protected void onPause() {
         super.onPause();
-        if (webView != null) webView.onPause();
     }
 
     @Override
