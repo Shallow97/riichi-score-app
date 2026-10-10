@@ -1,9 +1,14 @@
 @echo off
 setlocal
 rem Riichi score app - server on/off switch (double-click to toggle)
-rem NOTE: keep this file ASCII-only. Chinese path is resolved via %~dp0.
+rem NOTE: keep this file ASCII-only. Project path is resolved via %~dp0.
+rem
+rem Node.js resolution order:
+rem   1) set NODE=<full path to node.exe> before running this script
+rem   2) node.exe found on PATH
+rem Install Node.js from https://nodejs.org/ if neither works.
 
-set "NODE=C:\Users\Administrator\.workbuddy\binaries\node\versions\22.22.2-3\node.exe"
+if not defined NODE set "NODE=node"
 set "PORT=8765"
 
 set "PID="
@@ -21,8 +26,10 @@ if defined PID (
   )
 ) else (
   echo [ON] Starting server on port %PORT% ...
-  if not exist "%NODE%" (
-    echo [ERROR] node.exe not found: %NODE%
+  where %NODE% >nul 2>&1
+  if errorlevel 1 (
+    echo [ERROR] node.exe not found on PATH.
+    echo         Install Node.js ^(https://nodejs.org/^) or run: set NODE=^<full path^> ^&^& "%~nx0"
     pause
     exit /b 1
   )

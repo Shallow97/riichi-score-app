@@ -10,16 +10,24 @@ android/local.properties
 # ================= 依赖（可 npm install 还原） =================
 node_modules/
 
-# ================= IDE（遵循 .idea/.gitignore 的意图只排机器相关项） =================
-.idea/workspace.xml
-.idea/shelf/
+# ================= IDE（机器相关，全部不入库） =================
+# 项目结构用 README 描述即可，不必入库 IDE 的个人配置
+.idea/
 .vscode/
 *.swp
 
-# ================= WorkBuddy 临时产物 =================
-# memory/ 是项目知识（日志 + 长期约定），要入库；tmp/ 与 scratch/ 是过程产物，不入库
+# ================= WorkBuddy 本机临时产物 =================
+# memory/ 是项目知识（计分口径、协议约定），要入库；
+# tmp/ 与 scratch/ 是本机过程产物（含第三方 SDK 克隆，可达 170MB+），绝不入库
 .workbuddy/tmp/
 .workbuddy/scratch/
+# archive-memory-* 是被移出仓库的历史日志本地备份（224K），只留本地
+.workbuddy/archive-memory-*/
+
+# ================= 一次性排查残留 =================
+.workbuddy/*.txt
+.workbuddy/*.py
+*.bak
 
 # ================= 系统 =================
 Thumbs.db

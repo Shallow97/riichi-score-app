@@ -1,0 +1,24 @@
+{
+  "name": "riichi-score-app",
+  "version": "1.0.0",
+  "description": "日本麻将（立直麻将）对局计分器：房主手机跑 App，其他玩家浏览器输 IP 即可加入",
+  "private": false,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Shallow97/riichi-score-app.git"
+  },
+  "scripts": {
+    "start": "node serve.js",
+    "test": "node tests/run-all.js"
+  },
+  "dependencies": {
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "jsdom": "^30.0.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
