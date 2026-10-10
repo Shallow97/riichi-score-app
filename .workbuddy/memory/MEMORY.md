@@ -65,9 +65,17 @@
   仓库同时保留 `prototype/` 与 `assets/` 两份前端资源（开源可复现打包），改动仍需同步两份。
 
 ## 测试与构建命令
+- **构建 APK（工具链不在 PATH，必须显式指定全路径）**：
+  ```bash
+  export JAVA_HOME="D:/tools/jdk-17.0.2"        # 另有 D:/Android Studio/jbr/bin/java.exe
+  export GRADLE_USER_HOME="D:/tools/gradle-home"
+  /d/tools/gradle-8.2/bin/gradle assembleDebug --no-daemon
+  ```
+  ⚠️ `android/` 下**没有 `gradlew`**（只有 wrapper properties），且 `java`/`gradle` 都不在 PATH，
+  必须按上面写全路径直呼（否则触发沙箱 `decisionRecord` 报错）。SDK 在 `C:/Users/Administrator/AppData/Local/Android/Sdk`。
 - 跑测试：`cd prototype && npm test`（20 个脚本，无需服务器）；`npm test -- --server` 连 net 系列一起跑（自动起 serve.js）
 - ⚠️ 测试需 `jsdom`（devDep）+ `ws`（dep），本机 jsdom 在受管 workspace，跑测试前设
   `NODE_PATH=C:/Users/Administrator/.workbuddy/binaries/node/workspace/node_modules`
 - ⚠️ `tests/run-all.js` 用异步 `spawn` 而非 `spawnSync`：本机 cmd.exe 在沙箱下会 `EBUSY`，`shell:true` 走不通
-- 打包：`cd android && gradle assembleDebug`；中文路径需 `gradle.properties` 的 `android.overridePathCheck=true`
-- 校验 APK 内资源：`unzip -p app-debug.apk assets/js/app.js | sha256sum`（别看字节数）
+- 打包后校验：`unzip -p app-debug.apk assets/js/app.js | sha256sum` 对比 `prototype/js/app.js`（**别看字节数**）
+- dex 时间戳显示 `1981-01-01` 是 Android 构建常态；大量 `UP-TO-DATE` 通常也是对的（核对中国 class 编译时间）
