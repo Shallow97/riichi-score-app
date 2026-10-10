@@ -6,7 +6,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const OUT = 'D:/日麻计分APP/.workbuddy/tmp';
+const OUT = path.resolve(__dirname, '..', '..', '.workbuddy', 'tmp');
 fs.mkdirSync(OUT, { recursive: true });
 
 function getJson(url) {

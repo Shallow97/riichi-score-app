@@ -3,7 +3,7 @@
  *
  * 用法：
  *   1) chrome --headless=new --disable-gpu --no-proxy-server --remote-debugging-port=9333 \
- *        --user-data-dir=D:/_cdp_tag --window-size=640,900 "file:///D:/日麻计分APP/prototype/tag.html?demo=1"
+ *        --user-data-dir=D:/_cdp_tag --window-size=640,900 "file:///<本仓库>/prototype/tag.html?demo=1"
  *   2) node prototype/tools/shot-tag-board.js   → 图输出到 .workbuddy/tmp/
  *
  * 输出：01-tag-demo.png（整页）+ 02-tag-canvas.png（仅 400×300 画布，即墨水屏实显内容）
@@ -12,7 +12,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const OUT = 'D:/日麻计分APP/.workbuddy/tmp';
+const OUT = path.resolve(__dirname, '..', '..', '.workbuddy', 'tmp');
 fs.mkdirSync(OUT, { recursive: true });
 
 function getJson(url) {

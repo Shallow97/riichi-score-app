@@ -3,14 +3,14 @@
  *
  * 覆盖：历史空态（立直棒引导）→ 主界面（四角 SVG 图标 / 按钮主次 / 顶栏热区）→ 逐局空态
  * 前置：chrome --headless=new --remote-debugging-port=9333 --user-data-dir=D:/_cdp_x
- *       开 file:///D:/日麻计分APP/prototype/index.html（单机模式，勿起 serve.js）
+ *       开 file:///<本仓库>/prototype/index.html（单机模式，勿起 serve.js）
  * 输出：.workbuddy/tmp/30-visual-*.png + 控制台断言结果
  */
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const OUT = 'D:/日麻计分APP/.workbuddy/tmp';
+const OUT = path.resolve(__dirname, '..', '..', '.workbuddy', 'tmp');
 fs.mkdirSync(OUT, { recursive: true });
 
 function getJson(url) {

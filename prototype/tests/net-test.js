@@ -37,17 +37,18 @@ function testHostAutoConnect(done) {
 function testMemberFlow(done) {
   console.log('\n== net.js: 成员自动连接 + 操作权 ==');
   const hostWs = new WebSocketImpl('ws://localhost:8765/ws?host=1');
-  let step = 0;
+  let step = 0, seq = 0;
   hostWs.on('message', (d) => {
     const m = JSON.parse(d.toString());
-    if (m.type === 'room-created' && step === 0) {
+    if (m.type === 'welcome' && m.role === 'host' && step === 0) {
       step = 1;
+      seq = m.seq || 0;
       const N = loadNet('');
       let gotState = false;
       N.onState((state) => {
         if (!gotState) {
           gotState = true;
-          ok('成员收到房主广播状态');
+          ok('成员收到房主提交后的权威态');
           N.requestAction('小明', (err, granted) => {
             if (granted) {
               ok('成员申请操作权成功');
@@ -62,7 +63,10 @@ function testMemberFlow(done) {
         }
       });
       N.init();
-      setTimeout(() => { hostWs.send(JSON.stringify({ type: 'host-state', state: '{"room":"member1"}' })); }, 300);
+      // 全提交制：房主也走 commit（协议 v2）
+      setTimeout(() => {
+        hostWs.send(JSON.stringify({ type: 'commit', opId: 'net-test-1', baseSeq: seq, state: '{"room":"member1"}' }));
+      }, 300);
       setTimeout(() => { if (!gotState) { bad('成员收状态超时'); hostWs.close(); done(); } }, 3000);
     }
   });

@@ -1,10 +1,14 @@
 /* 场风盘控制页截图：file:// 打开 index.html（WS 连不上自动降级单机，不碰 8765）
- * 用法：先起无头 Chrome --remote-debugging-port=9333 --user-data-dir=D:/_cdp_eink
- *       打开 file:///D:/日麻计分APP/prototype/index.html
+ * 用法：先起无头 Chrome --remote-debugging-port=9333 --user-data-dir=<临时目录>
+ *       打开本仓库 prototype/index.html
  * 然后运行本脚本 → 输出 .workbuddy/tmp/03-eink-page.png
  */
 const fs = require('fs');
 const http = require('http');
+const path = require('path');
+
+const OUT = path.resolve(__dirname, '..', '..', '.workbuddy', 'tmp');
+fs.mkdirSync(OUT, { recursive: true });
 
 function getJson(url) {
   return new Promise((res, rej) => {
@@ -30,7 +34,7 @@ function getJson(url) {
   await new Promise(r => setTimeout(r, 300));
   let shot = await call('Page.captureScreenshot', { format: 'png' });
   if (shot && shot.result && shot.result.data) {
-    fs.writeFileSync('D:/日麻计分APP/.workbuddy/tmp/03-eink-page.png', Buffer.from(shot.result.data, 'base64'));
+    fs.writeFileSync(path.join(OUT, '03-eink-page.png'), Buffer.from(shot.result.data, 'base64'));
     console.log('saved 03-eink-page.png');
   } else { console.log('shot1 failed:', JSON.stringify(shot).slice(0, 200)); }
   // 顺便回主页截一张（含新按钮）
@@ -38,7 +42,7 @@ function getJson(url) {
   await new Promise(r => setTimeout(r, 300));
   shot = await call('Page.captureScreenshot', { format: 'png' });
   if (shot && shot.result && shot.result.data) {
-    fs.writeFileSync('D:/日麻计分APP/.workbuddy/tmp/04-mode-page.png', Buffer.from(shot.result.data, 'base64'));
+    fs.writeFileSync(path.join(OUT, '04-mode-page.png'), Buffer.from(shot.result.data, 'base64'));
     console.log('saved 04-mode-page.png');
   } else { console.log('shot2 failed:', JSON.stringify(shot).slice(0, 200)); }
   cdp.close(); setTimeout(() => process.exit(0), 200);

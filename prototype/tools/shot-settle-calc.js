@@ -13,7 +13,7 @@
  *
  * 用法：
  *   1) chrome --headless=new --disable-gpu --no-proxy-server --remote-debugging-port=9333 \
- *        --user-data-dir=D:/_cdp_x --window-size=393,852 "file:///D:/日麻计分APP/prototype/index.html"
+ *        --user-data-dir=D:/_cdp_x --window-size=393,852 "file:///<本仓库>/prototype/index.html"
  *   2) node prototype/tools/shot-settle-calc.js      → 图输出到 .workbuddy/tmp/
  *
  * 改别的界面时复制本文件、替换中间的 ev(...) 步骤即可复用骨架。
@@ -22,7 +22,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const OUT = 'D:/日麻计分APP/.workbuddy/tmp';
+const OUT = path.resolve(__dirname, '..', '..', '.workbuddy', 'tmp');
 fs.mkdirSync(OUT, { recursive: true });
 
 function getJson(url) {
