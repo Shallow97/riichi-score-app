@@ -42,6 +42,8 @@
             <div class="qr-title">扫一扫加入本桌</div>
             <div class="qr-canvas" id="qr-canvas"></div>
             <div class="qr-url" id="qr-url">—</div>
+            <!-- 推送二维码到场风盘墨水屏（仅与场风盘蓝牙连接时可点；无二维码时随本卡片一起隐藏） -->
+            <button class="btn" id="btn-push-qr" style="margin-top:10px;width:100%" disabled>📡 推送二维码到场风盘</button>
           </div>
           <div class="net-room-meta" id="net-room-meta"></div>
         </div>
@@ -214,14 +216,16 @@
         <div class="net-status" id="eink-status">未连接</div>
         <button class="btn primary" id="btn-eink-connect" style="margin-top:10px;width:100%">扫描并连接场风盘</button>
         <button class="btn" id="btn-eink-disconnect" style="margin-top:10px;width:100%;display:none">断开连接</button>
+        <button class="btn" id="btn-eink-diag" style="margin-top:10px;width:100%">蓝牙诊断</button>
+        <div class="eink-manual">
+          <input type="text" id="eink-manual-addr" placeholder="直接连接地址（MAC）" autocomplete="off" spellcheck="false">
+          <button class="btn" id="btn-eink-connect-addr">直连</button>
+        </div>
+        <div class="eink-scan-count" id="eink-scan-count"></div>
         <div id="eink-scan-list" class="eink-scan-list"></div>
       </div>
 
       <div class="card">
-        <div class="switch-row">
-          <span class="lbl">黑白快刷（刷新 2-3 秒，无红色；关闭=三色全刷约 15 秒）</span>
-          <div class="switch" id="switch-eink-fast"></div>
-        </div>
         <div class="switch-row">
           <span class="lbl">蓝牙常开（设备保持可连接，断电后仍有效）</span>
           <div class="switch" id="switch-eink-always"></div>
@@ -231,6 +235,22 @@
           对局界面下方有「立即推送」按钮可手动刷新。若设备已开启蓝牙常开，无需按设备按键即可随时连接；
           未开启时需先按一下设备蓝牙键（可连接约 5 分钟）。
         </div>
+      </div>
+
+      <div class="card">
+        <h3>推图自检</h3>
+        <button class="btn" id="btn-eink-clear" style="width:100%" disabled>面板自检（清屏）</button>
+        <button class="btn" id="btn-eink-test" style="width:100%;margin-top:10px" disabled>推送测试图案</button>
+        <button class="btn" id="btn-eink-fixpins" style="width:100%;margin-top:10px" disabled>修复引脚配置</button>
+        <div class="eink-tip">
+          清屏只走固件内部「复位 + 上电 + 填白 + 全屏刷新」，不经过画面数据；测试图案不依赖对局。
+          两者配合可把「屏 / 蓝牙不响应」和「画面数据错」分开判断。
+          正确结果：清屏后屏变全白；测试图案为黑框 + 左上红块 + 右上黑块 + 「场风盘」。
+        </div>
+        <div class="eink-tip">
+          「修复引脚配置」用于意外把设备引脚写坏后的回写（连接后日志会打印设备自报的 pins，
+          正常应为 1413060504030207）。回写后请断开重连一次，确认日志里的 pins 已变回正确值。        </div>
+        <div class="eink-log" id="eink-log"></div>
       </div>
     </div>
 
@@ -435,7 +455,7 @@
       <div class="modal modal-view">
         <span class="close-x">×</span>
         <h3>选择你的座位</h3>
-        <p class="view-desc">选择哪一个用户名对应你自己。锁定后，你的名字会固定显示在桌面下方，方便以自己为视角看牌局。</p>
+        <p class="view-desc">选择哪一个用户名对应你自己。锁定后，你的名字会固定显示在桌面下方，方便以自己为视角看牌局；联网时这个选择也会作为你的本机名上报，别人被挡下时会提示「你的名字 正在操作」。</p>
         <div id="view-pick" class="player-pick"></div>
         <div class="view-current" id="view-current"></div>
         <div class="view-actions">
@@ -699,6 +719,12 @@
 
     <!-- Toast -->
     <div id="toast"></div>
+  </div>
+
+  <!-- 掉线锁定横幅：仅在"曾进房但当前与服务器断开"时显示（app.js 切换 hidden） -->
+  <div id="net-banner" hidden>
+    <span class="net-banner-dot" aria-hidden="true"></span>
+    <span class="net-banner-text">与服务器的连接已断开，正在自动重连…（期间无法操作）</span>
   </div>
 
   <script src="js/rules.js"></script>

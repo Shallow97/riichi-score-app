@@ -71,7 +71,7 @@
     const page = $('#' + id);
     if (page) page.classList.add('active');
     // 回到模式选择页时，同步"继续进行中的对局"按钮的显隐
-    if (id === 'page-mode') updateContinueBtn();
+    if (id === 'page-mode') { updateContinueBtn(); refreshEinkConnected(); }
   }
 
   // 首页"继续当前对局"按钮：仅当存在进行中对局（已持久化）时显示
@@ -99,17 +99,24 @@
     if (window.Net) {
       Net.init();
       Net.install();
-      // 成员收到房主广播：更新本地游戏状态并刷新界面（房主端不会触发此回调）
+      // 本机名补报（修复 C）：刷新页面 / 重开 App 后也带着名字重连。
+      // 旧版只在"建立对局"时上报一次，房主重启后服务器上 conn.name 变 null，
+      // 别人被拒时的提示就退化成"暂时无法操作"（而不是"XXX 正在操作"）。
+      // 此刻 socket 可能还没 open —— net.js 会把名字存下来、在每个连接 onopen 时重发。
+      if (profile && profile.name) Net.setName(profile.name);
+      // 收到服务器权威态（加入/重连的 welcome、或别人提交后的广播）：
+      // 全提交制下这份就是唯一账本，直接采用并落库（刷新/重启不丢）。
       Net.onState((serializedState) => {
         try {
           game = Rules.deserialize(serializedState);
+          Storage.saveActive(game);
           // 成员收到权威状态后切到对局主界面
           if (!$('#page-main').classList.contains('active')) showPage('page-main');
           renderMain();
         } catch (e) { toast('同步数据异常'); }
       });
-      // 联网状态变化时刷新 UI
-      Net.onStatus(() => { updateNetStatusUI(); renderMain(); });
+      // 联网状态变化时刷新 UI；掉线锁定 / 重连恢复在这里统一处理（横幅、回滚、提示）
+      Net.onStatus(() => { updateNetStatusUI(); onNetStatusChanged(); renderMain(); });
       // 操作权变化（谁在操作）：刷新按钮状态
       Net.onOperator(() => { renderMain(); });
       // 房主结束对局：成员同步结束本次对局并跳转到历史界面
@@ -136,6 +143,10 @@
     bindGlobalEvents();
     bindNetUI();
     updateNetStatusUI();
+    refreshEinkConnected();   // 冷启动若场风盘已连接，首页按钮也应可点
+
+    // Android 返回键二次确认用：房主端"对局进行中"标记（见 MainActivity.onBackPressed）
+    window.__netHostBusy = function () { return !!(game && !game.over && isHost()); };
   }
 
   // ============ 全局事件 ============
@@ -455,6 +466,26 @@
     return { ok: true };
   }
 
+  /**
+   * 记录"本机用户名"——仅用于联网时"谁在操作"的提示文案，不参与任何计分。
+   *
+   * 只有**用户的显式动作**会走到这里（修复 A）：
+   *   ① 「设置名字」按钮
+   *   ② 视角锁定（"选哪一个用户名对应你自己"＝声明我就是这家）
+   * 建局、重连、自动流程一律不写它，避免把牌桌上别人的名字当成本机名。
+   *
+   * 落盘（修复 C）：名字一旦存在就持久化；配合 init() 的补报 + net.js 每次
+   * onopen 重发，刷新页面 / 重开 App / 掉线重连后服务器都拿得到本机名，
+   * 不会退化成"无名操作者"。
+   */
+  function applyLocalName(name) {
+    const n = String(name || '').trim();
+    if (!n) return;
+    if (window.Net && Net.setName) Net.setName(n);
+    profile = Object.assign({}, profile || {}, { name: n });
+    Storage.saveProfile(profile);
+  }
+
   function bindNetUI() {
     if (!window.Net) return;
     // 加入他人对局：输入房主 IP → 加入（点按钮或回车）
@@ -475,14 +506,90 @@
     // 名字输入框：加入后设置名字（用于操作权显示）
     const nameInput = $('#net-name');
     const setNameBtn = $('#btn-set-name');
+    // 回填已保存的本机名，避免每次都要重输
+    if (nameInput && !nameInput.value && profile && profile.name) nameInput.value = profile.name;
     if (setNameBtn) setNameBtn.addEventListener('click', () => {
       const n = (nameInput && nameInput.value || '').trim() || '玩家';
-      Net.setName(n);
+      applyLocalName(n);
       toast('名字已设为 ' + n);
     });
     if (nameInput) nameInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && setNameBtn) setNameBtn.click();
     });
+  }
+
+  // ============ 首页「推送二维码到场风盘」（2026-10-05） ============
+  // 首页卡片里那个「加入本桌」二维码 → 推到场风盘墨水屏，其他设备扫墨水屏即可加入。
+  // 可用性：① 有二维码（房主且已进房，随 #net-room-qr 一起显隐）；
+  //         ② 场风盘蓝牙已连接（未连接则置灰，不可点）。
+  let currentJoinUrl = null;   // 当前卡片的加入链接（= 二维码内容）
+  let einkConnected = false;   // 场风盘蓝牙连接态（由 EinkNative.onStatus 事件维护）
+
+  /** 同步「推送二维码」按钮的可用性：未连接场风盘则置灰 */
+  function syncPushQrBtn() {
+    const btn = $('#btn-push-qr');
+    if (!btn) return;
+    btn.disabled = !einkConnected;
+  }
+
+  /** 点击「推送二维码到场风盘」：生成二维码位图 → 交原生 BLE 推屏 */
+  function onPushQrClick() {
+    if (!einkConnected) { toast('场风盘未连接'); return; }
+    if (!currentJoinUrl) { toast('当前没有可推送的二维码'); return; }
+    const b = window.NativeBridge;
+    if (!b || !b.einkPushQr) { toast('当前环境不支持推送场风盘'); return; }
+    const b64 = buildQrPngBase64(currentJoinUrl);
+    if (!b64) { toast('二维码生成失败'); return; }
+    try { b.einkPushQr(b64); } catch (e) { toast('推送失败：' + ((e && e.message) || e)); return; }
+    toast('正在推送二维码到场风盘…');
+  }
+
+  /** 向后端问一次当前是否已连场风盘（进首页/初始化时用；浏览器环境无此接口 → 视为未连接） */
+  function refreshEinkConnected() {
+    const b = window.NativeBridge;
+    if (b && b.einkIsConnected) {
+      try { einkConnected = !!b.einkIsConnected(); } catch (e) { einkConnected = false; }
+    } else {
+      einkConnected = false;
+    }
+    syncPushQrBtn();
+  }
+
+  /**
+   * 生成二维码 → 400×300 白底 PNG（base64，不含 data: 前缀），供原生直接推屏。
+   * 直接按模块整数倍绘制（不做二次缩放），保证墨水屏上边缘锐利、好扫。
+   * 内容为空 / 依赖缺失时返回 null。
+   */
+  function buildQrPngBase64(text) {
+    if (!text || typeof window.qrcode !== 'function') return null;
+    try {
+      const qr = window.qrcode(0, 'M');   // 自动扩容、纠错级 M
+      qr.addData(text);
+      qr.make();
+      const modules = qr.getModuleCount();
+      const W = 400, H = 300, margin = 4; // 静默区 4 模块（QR 规范下限）
+      const total = modules + margin * 2;
+      let scale = Math.floor(Math.min(W, H) / total);
+      if (scale < 1) scale = 1;
+      const size = total * scale;
+      const canvas = document.createElement('canvas');
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#000000';
+      const ox = Math.floor((W - size) / 2) + margin * scale;
+      const oy = Math.floor((H - size) / 2) + margin * scale;
+      for (let r = 0; r < modules; r++) {
+        for (let c = 0; c < modules; c++) {
+          if (qr.isDark(r, c)) ctx.fillRect(ox + c * scale, oy + r * scale, scale, scale);
+        }
+      }
+      return canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, '');
+    } catch (e) {
+      return null;
+    }
   }
 
   // 更新模式选择页的联网状态展示（无房间码）
@@ -515,6 +622,7 @@
       roomEl.style.display = 'none';
       actionsEl.style.display = 'none';
       if (qrBlock) qrBlock.style.display = 'none';
+      currentJoinUrl = null;   // 无二维码 → 「推送二维码」按钮随卡片一起隐藏
       return;
     }
     if (Net.isInRoom()) {
@@ -533,21 +641,30 @@
         const fullUrl = 'http://' + hostIp + ':' + port + '/';
         $('#qr-url').textContent = fullUrl;
         renderQR(qrBlock, qrCanvas, fullUrl);
-        meta.textContent = '已连接 ' + Net.memberCount() + ' 台设备 · 全员可结算/立直';
+        currentJoinUrl = fullUrl;   // 「推送二维码」按钮的推送内容
+        // ⚠️ 与对局内 `.actions .hint` 保持同一口径：这里数的是"加入的其他设备"，
+        //    不含房主自己（memberCount() 含自己，故 -1）。旧版此处直接写 memberCount()，
+        //    于是"已连接 1 台设备"在没人加入时就出现，与房间提示行的"已连接 0 台设备"自相矛盾。
+        meta.textContent = '已连接 ' + Math.max(0, Net.memberCount() - 1) + ' 台设备 · 全员可结算/立直';
       } else {
         statusEl.textContent = '已连接到房主的对局 · 全员可结算/立直';
         roomEl.style.display = 'none';
         meta.textContent = '';
         if (qrBlock) qrBlock.style.display = 'none';
+        currentJoinUrl = null;
       }
       statusEl.className = 'net-status on';
-      actionsEl.style.display = 'none';
+      // 对局中也保留"设置名字"入口：房主一旦建局就再没有别的机会声明本机名
+      // （旧版这里 display:none → 服务器上房主永远是"无名"，别人被挡下时只能看到
+      //  「有人正在操作」，而不是「谁是操作者」）。名字改完立即上报并落盘。
+      actionsEl.style.display = 'block';
     } else {
       statusEl.textContent = '已连接服务器，等待房主建局';
       statusEl.className = 'net-status on';
       roomEl.style.display = 'none';
       actionsEl.style.display = 'block';
       if (qrBlock) qrBlock.style.display = 'none';
+      currentJoinUrl = null;
     }
   }
 
@@ -785,14 +902,14 @@
     game.players = newPlayers;
     game.dealerIndex = newPlayers.findIndex((p) => p.wind === '东'); // 庄=游戏内东
 
-    // 保存本机资料
-    profile = { name: names['南'] || names['东'] || names['西'] };
-    Storage.saveProfile(profile);
-    // 记录玩家名到联网层（用于操作权显示）
-    if (window.Net) Net.setName(profile.name);
-
-    // 记录对局创建者为本机用户名（原型：南座为本机视角，模拟自己坐在下方）
-    Storage.saveActive(game);
+    // ⚠️ 这里**不写**本机用户资料（修复 A）。
+    //    旧版是 `profile = { name: names['南'] || names['东'] || names['西'] }` + Storage.saveProfile：
+    //    把"南座那格填的名字"当成本机用户名永久落盘 —— 实测把用户已设的「高琦」
+    //    改成了牌桌上别人的名字「小明」，是在悄悄篡改用户资料；
+    //    而且联网后房主可能坐任意方位，"南座=我"这个原型假设也不成立。
+    //    本机名只由用户的显式动作产生（「设置名字」/ 视角锁定"我就是这家"），见 applyLocalName()。
+    //    建局只负责对局数据，不碰身份。
+    commitGame();
     showPage('page-main');
     renderMain();
     toast('对局已建立，欢迎来到' + (setupMode === 3 ? '三人' : '四人') + '麻将');
@@ -872,7 +989,9 @@
       (game.opts.westRule ? ' · 西入' : '');
 
     // 操作按钮可用性（全员协作：结算/立直对所有玩家开放，全局操作仅房主）
-    const globalOnly = !isHost(); // 流局/修正/撤回/结束仅房主
+    // 掉线锁定：曾进房但当前未连上 → 一切会写状态的操作全部禁用（口径：锁住等重连）
+    const locked = netLocked();
+    const globalOnly = !isHost() || locked; // 流局/修正/撤回/结束仅房主
     // 结算/立直：联网成员需在"空闲或自己持有操作权"时可用
     const localOper = canOperateLocal();
     $('#btn-riichi').disabled = game.over || !localOper;        // 立直：所有玩家可操作
@@ -882,8 +1001,8 @@
     $('#btn-tsumo-ron').disabled = game.over || !localOper;      // 和牌结算：所有玩家可操作
     $('#btn-end').disabled = globalOnly;                         // 结束对局仅房主
 
-    // 场风盘「立即推送」：仅房主显示（单机也是房主）
-    $('#btn-tag-push').style.display = isHost() ? '' : 'none';
+    // 场风盘「立即推送」：仅房主显示（单机也是房主）；掉线锁定期间一并隐藏
+    $('#btn-tag-push').style.display = (isHost() && !locked) ? '' : 'none';
 
     // 新局开始校验：局数/本场变化时校验场上总分
     const roundMark = game.round.wind + game.round.num + '-' + game.honba;
@@ -977,16 +1096,20 @@
   }
 
   // 房主判断：
-  //  - 联网已加入房间：以服务器确认的房主身份为准（Net.isHost()）
-  //  - 单机/未联网：本机即为房主（原型简化，保持单机体验完整）
+  //  - 从未联网（单机，含电脑浏览器无服务器）：本机即房主，保持单机体验完整
+  //  - 曾成功进房（含当前掉线重连中）：以服务器确认的角色为准，**绝不因为在重连就升格成房主**
+  //    ⚠️ 旧版此处写的是 `if (Net.isInRoom()) return Net.isHost(); return true;`，
+  //    掉线时 isInRoom() 为 false → 直接返回 true → 成员手机凭空获得房主权限
+  //    （流局/修正/撤回/结束按钮全亮），这是"掉线后本地继续计分且不上行"的直接成因。
   function isHost() {
-    if (window.Net && Net.isInRoom()) return Net.isHost();
+    if (!window.Net) return true;
+    if (Net.hasJoined && Net.hasJoined()) return Net.isHost();
     return true;
   }
 
   // ============ 场风盘蓝牙推送（2026-09-30，需求定稿见 memory） ============
   // 自动推送触发：立直宣言/取消、每局结算（荣和/自摸/流局）；手动修正不自动推。
-  // 节流在原生侧（EinkBoardManager 10s 合并）；immediate=true（立即推送按钮）不受限。
+  // 节流在原生侧（EinkBoardManager 1s 合并）；immediate=true（立即推送按钮）不受限。
   // 通道：联网走 WS push-tag 消息（服务器=房主手机原生侧处理）；WS 不可用但有
   // NativeBridge（APP 内）时直接调原生；电脑浏览器无两者则静默跳过。
   function tagDataFromGame() {
@@ -1019,6 +1142,7 @@
   //  - 联网：操作权空闲 或 本机正持有操作权 时可用（房主也不例外，
   //    若已被某成员/玩家占用，房主也点不开，杜绝双份结算）
   function canOperateLocal() {
+    if (netLocked()) return false;                 // 掉线锁定：任何写状态的操作都不许
     if (!window.Net || !Net.isInRoom()) return true;
     return Net.amOperator() || !Net.operatorName();
   }
@@ -1026,16 +1150,146 @@
     return true;
   }
 
+  // ============ 联网锁定 / 掉线回滚（2026-10-03 批次 1） ============
+  // 口径：一旦与服务器断开，就锁住所有会写状态的操作，并把"没同步成功的本地改动"
+  // 回滚到最后一次与服务器一致的状态 —— 杜绝本地悄悄记下服务器不知道的对局
+  // （旧版掉线后 app.js 会把本机当成房主，按钮全亮、算完也不上行）。
+  let netWasLocked = false;
+
+  /** 是否处于"曾进房但当前掉线"的锁定态 */
+  function netLocked() {
+    return !!(window.Net && Net.isLocked && Net.isLocked());
+  }
+
+  /**
+   * 本次操作是否还允许落地；不允许则返回给用户的说明（null = 放行）。
+   * 三种拦法：
+   *  1. 掉线锁定（等重连）
+   *  2. 联网成员丢失操作权 —— 典型场景：结算/立直弹窗在断线前就打开了，
+   *     掉线重连后 iAmOperator 已被重置，此时若照常提交，服务器会以
+   *     conflict(denied) 拒绝 → 本地白操作一场（就是"操作没同步"的一种）
+   *  3. 单机/房主不拦（房主全局操作本就不占用操作权，服务器也接受房主提交）
+   */
+  function operationBlockReason() {
+    if (netLocked()) return '连接已断开，正在自动重连';
+    if (!window.Net || !Net.isInRoom()) return null;   // 单机：放行
+    if (Net.isHost()) return null;                     // 房主：全局操作/结算均可提交
+    if (!Net.amOperator()) return '操作权已失效，请重新操作';
+    return null;
+  }
+
+  /** 把本地未同步的改动回滚到最后一次与服务器一致的状态；返回是否真的回滚了 */
+  function rollbackToSynced() {
+    if (!window.Net || !Net.lastSyncedState || !game) return false;
+    const synced = Net.lastSyncedState();
+    if (!synced) return false;
+    let cur = null;
+    try { cur = Rules.serialize(game); } catch (e) { return false; }
+    if (cur === synced) return false;              // 没有未同步改动
+    try { game = Rules.deserialize(synced); } catch (e) { return false; }
+    Storage.saveActive(game);                      // 本地写回同步态（不再外发，提交一律走 Net.commit）
+    return true;
+  }
+
+  /** 联网状态变化：掉线锁定 → 回滚 + 提示；恢复连接 → 提示解除 */
+  function onNetStatusChanged() {
+    const locked = netLocked();
+    if (locked && !netWasLocked) {
+      netWasLocked = true;
+      const rolled = rollbackToSynced();
+      toast(rolled ? '连接已断开，未同步的操作已撤销' : '连接已断开，正在自动重连…');
+    } else if (!locked && netWasLocked) {
+      netWasLocked = false;
+      toast('已重新连接');
+    }
+    updateNetBanner();
+  }
+
+  /**
+   * 顶部横幅。两种状态：
+   *  - warn（红）：本机与服务器断开 → 全部写状态的操作已禁用，等自动重连
+   *  - info（金）：房主页面离开了（服务器还在、分数都在）→ 成员的结算照常，
+   *    只有流局/修正/撤回/结束这四项房主专属操作暂时不可用
+   */
+  function updateNetBanner() {
+    const el = document.getElementById('net-banner');
+    if (!el) return;
+    const locked = netLocked();
+    const hostAway = !locked && !!window.Net
+      && Net.hasJoined && Net.hasJoined() && !Net.isHost() && Net.isHostOffline();
+    if (!locked && !hostAway) {
+      el.hidden = true;
+      el.classList.remove('warn', 'info');
+      return;
+    }
+    el.hidden = false;
+    el.classList.toggle('warn', locked);
+    el.classList.toggle('info', hostAway);
+    const txt = el.querySelector('.net-banner-text');
+    if (txt) {
+      txt.textContent = locked
+        ? '与服务器的连接已断开，正在自动重连…（期间无法操作）'
+        : '房主暂时离开，结算可继续（流局/修正/撤回/结束暂不可用）';
+    }
+  }
+
+  /**
+   * 所有业务变更的唯一落库出口（全提交制，2026-10-03 批次 2）。
+   *  - 单机（从未联网）：本机即权威，直接写 localStorage
+   *  - 联网：先把当前状态 commit 上行，**收到服务器 ack 才落库**；
+   *    被拒/冲突/超时/掉线 → 采用或回滚到服务器权威态并提示。
+   *    这样即使界面上某条路径漏了拦截，本地也不会留下"服务器不知道的一局"。
+   */
+  function commitGame() {
+    const block = operationBlockReason();
+    if (block) {
+      rollbackToSynced();
+      toast(block + '，本次操作未生效');
+      renderMain();
+      return false;
+    }
+    if (!window.Net || !Net.hasJoined || !Net.hasJoined()) {
+      Storage.saveActive(game);         // 单机：无服务器，本地即权威
+      return true;
+    }
+    let state;
+    try { state = Rules.serialize(game); } catch (e) { return false; }
+    Net.commit(state).then(() => {
+      Storage.saveActive(game);         // 服务器已确认 → 这时才落库
+      renderMain();
+    }).catch((err) => {
+      const reason = (err && err.reason) || 'offline';
+      if (reason === 'stale') toast('记录已被其他玩家更新，已采用最新状态');
+      else if (reason === 'denied') toast('操作权已失效，请重新操作');
+      else if (reason === 'timeout') toast('未收到服务器确认，正在重新同步…');
+      else toast('连接已断开，本次操作未生效');
+      // conflict（stale/denied）时 net.js 已把权威态推给 onState，game 已被替换并落库；
+      // 其余情况回滚到最后一次与服务器一致的状态。
+      if (reason !== 'stale') rollbackToSynced();
+      // 结算/流局的结果弹窗是在 commit 之后同步打开的，它展示的是"没生效"的那份数字，
+      // 必须一起关掉，否则用户对着一屏已作废的分数做判断。
+      const resultModal = document.getElementById('modal-result');
+      if (resultModal && resultModal.classList.contains('show')) closeModal('modal-result');
+      renderMain();
+    });
+    return true;
+  }
+
   // ============ 操作：立直 ============
   // 平权模型：无论房主/成员，联网时都先向服务器申请操作权，成功才进入操作。
   // 单机/未进房：直接进入（房主本地体验）。
   function tryBeginOperate(fn) {
+    // 掉线锁定：连弹窗都不打开，直接提示等重连
+    if (netLocked()) { toast('连接已断开，正在自动重连，请稍候'); return; }
     if (!window.Net || !Net.isInRoom()) { fn(); return; }
     if (Net.amOperator()) { fn(); return; }
     Net.requestAction(Net.memberName(), (err, granted) => {
       if (err || !granted) {
+        // 被拒 = 别人正占着操作权。优先报出是谁（来自服务器 operator-change 广播）；
+        // 名字可能确实取不到（对方还没设过本机名）→ 退化成不点名的提示，
+        // 而不是含糊的"暂时无法操作"（旧版这个兜底文案会让人以为是自己操作错了）。
         const by = Net.operatorName();
-        toast(by ? (by + ' 正在操作，请稍候') : (err || '暂时无法操作'));
+        toast(err || (by ? (by + ' 正在操作，请稍候') : '有人正在操作，请稍候'));
         return;
       }
       fn();
@@ -1069,7 +1323,7 @@
         () => {
           const r = Rules.undo(game);
           toast(r.msg);
-          Storage.saveActive(game);
+          commitGame();
           renderMain();
         }
       );
@@ -1201,9 +1455,14 @@
       return;
     }
     viewLock = viewSel;
+    // 视角锁定 = 用户显式声明"我就是这名玩家" → 一并作为本机用户名上报/落盘。
+    // 这是联网后唯一能在对局内声明身份的地方（对局中"设置名字"入口不可见）。
+    // 只有它会写本机名，所以不会像旧版建局那样把牌桌上别人的名字写成"我"。
+    applyLocalName(viewSel);
     closeModal('modal-view');
     renderMain();
-    toast('已锁定：' + viewSel + ' 固定显示在桌面下方（仅本机生效）');
+    toast('已锁定：' + viewSel + ' 固定显示在桌面下方' +
+      (window.Net && Net.isInRoom() ? '（你的操作会显示为「' + viewSel + '」）' : '（仅本机生效）'));
   }
 
   function unlockView() {
@@ -1426,11 +1685,14 @@
         <div class="pts">${p.points}点</div>
         ${p.riichi ? '<div class="riichi-stick"><span class="riichi-stick-dot"></span></div>' : ''}`;
       div.addEventListener('click', () => {
+        // 弹窗可能在断线/丢操作权之前就打开了，这里挡住最后一步（否则只本地生效不上行）
+        const block = operationBlockReason();
+        if (block) { toast(block + '，本次立直未生效'); return; }
         const r = Rules.doRiichi(game, p.name);
         if (r.ok && r.action === 'riichi' && window.Sfx) Sfx.riichi();  // 仅实际宣言立直时响（取消不响）；本弹窗只在操作权持有者设备打开，天然"仅操作者手机响"
         if (r.ok) notifyTagPush(false);  // 立直宣言/取消 → 场风盘自动推送（节流）
         toast(r.msg);
-        Storage.saveActive(game);
+        commitGame();
         renderMain();
         closeModal('modal-riichi');
         if (window.Net && Net.isInRoom() && Net.amOperator()) Net.releaseAction();
@@ -1724,6 +1986,9 @@
 
   function finalizeSettlement() {
     if (settleQueue.length === 0) return;
+    // 结算弹窗链可能在断线/丢操作权之前就打开了，这里挡住最后一步
+    const block = operationBlockReason();
+    if (block) { toast(block + '，本次结算未生效'); return; }
     // 关闭"是否还有其他人付分"询问弹窗，避免残留
     closeModal('modal-settle-more');
     // 汇总所有转移
@@ -1795,7 +2060,7 @@
 
     const r = Rules.applyRoundResult(game, result);
     // 结算后保存
-    Storage.saveActive(game);
+    commitGame();
     notifyTagPush(false);  // 局结算 → 场风盘自动推送（节流）
 
     if (!balanced) {
@@ -1908,7 +2173,7 @@
         tanyou: [],          // 无听牌者，庄家必换庄
       };
       const r = Rules.applyRoundResult(game, result);
-      Storage.saveActive(game);
+      commitGame();
       notifyTagPush(false);  // 流局结算 → 场风盘自动推送（节流）
       toast(r.msg);
       closeModal('modal-flow');
@@ -1980,7 +2245,7 @@
       // 本局立直者（须在 applyRoundResult 清空立直标记前取，用于弹窗补记 -1000）
       const riichiNames = currentRiichiNames();
       const r = Rules.applyRoundResult(game, result);
-      Storage.saveActive(game);
+      commitGame();
       notifyTagPush(false);  // 流局结算 → 场风盘自动推送（节流）
       toast(r.msg);
       closeModal('modal-flow-koei');
@@ -2023,7 +2288,7 @@
       if (isNaN(delta) || delta === 0) { toast('请输入有效的增减分数'); return; }
       const r = Rules.manualAdjust(game, adjustTarget.name, delta);
       toast(r.msg);
-      Storage.saveActive(game);
+      commitGame();
       closeModal('modal-adjust-amount');
       renderMain();
       checkTotalScore(); // 手动修正后立即重新校验总分（横幅随修正结果更新）
@@ -2052,7 +2317,7 @@
       if (!adjustRoundTarget) { toast('请先选择目标局'); return; }
       const r = Rules.adjustRound(game, adjustRoundTarget.wind, adjustRoundTarget.num);
       toast(r.msg);
-      Storage.saveActive(game);
+      commitGame();
       closeModal('modal-adjust-round');
       renderMain();
       checkTotalScore();
@@ -2074,7 +2339,7 @@
         () => {
           const r = Rules.setHonba(game, v);
           toast(r.msg);
-          Storage.saveActive(game);
+          commitGame();
           closeModal('modal-adjust-honba');
           renderMain();
           checkTotalScore();
@@ -2105,7 +2370,7 @@
       if (!payer) { toast('请选择承担差额的玩家'); return; }
       const r = Rules.adjustKyotaku(game, v, payer);
       toast(r.msg);
-      Storage.saveActive(game);
+      commitGame();
       closeModal('modal-adjust-kyotaku');
       renderMain();
       checkTotalScore();
@@ -2181,6 +2446,9 @@
   function bindEnd() {
     // 真正的"结束并保存"逻辑（供托已为 0 时才执行）
     function doArchiveGame() {
+      // 全提交制：结束对局也要上行（服务器据此清空权威态并通知成员），断线时不允许本地归档
+      const block = operationBlockReason();
+      if (block) { toast(block + '，暂时无法结束对局'); return; }
       const rec = Storage.archiveGame(game);
       Storage.clearActive();
       game = null;
@@ -2285,58 +2553,214 @@
   // ============ 场风盘蓝牙控制页（page-eink） ============
   // 原生 → JS 状态回调入口（MainActivity.evaluateJavascript 调用；浏览器/jsdom 中不触发）
   let einkScanning = false;
+
+  /** 推图日志留屏：原生日志以前只走 toast，一闪就没，故障时等于没有日志 */
+  function einkLog(msg, cls) {
+    const box = $('#eink-log');
+    if (!box || !msg) return;
+    const ln = document.createElement('span');
+    ln.className = 'ln' + (cls ? ' ' + cls : '');
+    ln.textContent = msg;
+    box.appendChild(ln);
+    while (box.children.length > 200) box.removeChild(box.firstChild);
+    box.scrollTop = box.scrollHeight;
+  }
+  function einkLogClear() {
+    const box = $('#eink-log');
+    if (box) box.innerHTML = '';
+  }
+  /** 自检按钮只在已连接时可用 */
+  function syncEinkSelfTest(connected) {
+    const c = $('#btn-eink-clear'), t = $('#btn-eink-test'), f = $('#btn-eink-fixpins');
+    if (c) c.disabled = !connected;
+    if (t) t.disabled = !connected;
+    if (f) f.disabled = !connected;
+  }
+
+  /**
+   * 连接进行中：锁住「直连」入口。
+   * 系统侧一次连接最久要等 30 秒才报超时，期间页面上原本**毫无变化** ——
+   * 用户点完直连只会觉得"按钮坏了"。所以：状态栏立刻变「正在连接…」，入口禁用，超时后明确报错。
+   */
+  function setEinkConnecting(on) {
+    const b = $('#btn-eink-connect-addr');
+    if (b) b.disabled = !!on;
+    const i = $('#eink-manual-addr');
+    if (i) i.disabled = !!on;
+  }
+
+  /**
+   * 扫描列表排序权重：命中场风盘(0) → 有名字(1) → 无名(2)。
+   * 周围常年有十来个「（无名设备）」（手环/耳机/车机等随机地址设备），
+   * 按到达顺序排会把真正想找的那一行淹掉。
+   */
+  function einkRank(it) {
+    if (it.dataset.hit === '1') return 0;
+    return it.dataset.named === '1' ? 1 : 2;
+  }
+  /** 按权重把节点插到「同权重之后、下一个更高权重之前」，同类内保持到达顺序 */
+  function einkPlace(item) {
+    const list = $('#eink-scan-list');
+    if (!list) return;
+    const r = einkRank(item);
+    let ref = null;
+    for (let i = 0; i < list.children.length; i++) {
+      const c = list.children[i];
+      if (c === item) continue;
+      if (einkRank(c) > r) { ref = c; break; }
+    }
+    if (ref) list.insertBefore(item, ref);
+    else list.appendChild(item);
+  }
+  /** 列表上方的一行统计：让"扫到 15 个但没有场风盘"和"一个都没扫到"一眼能分开 */
+  function renderScanCount() {
+    const list = $('#eink-scan-list'), el = $('#eink-scan-count');
+    if (!list || !el) return;
+    const kids = list.children;
+    let named = 0, hits = 0;
+    for (let i = 0; i < kids.length; i++) {
+      if (kids[i].dataset.hit === '1') hits++;
+      if (kids[i].dataset.named === '1') named++;
+    }
+    if (kids.length === 0) { el.textContent = ''; return; }
+    el.textContent = '共 ' + kids.length + ' 个设备：有名字 ' + named
+      + '，无名 ' + (kids.length - named)
+      + (hits ? '，★ 场风盘 ' + hits + ' 个' : '，未发现场风盘');
+  }
+
   window.EinkNative = {
     onStatus: function (type, data) {
       const st = $('#eink-status');
       if (type === 'scanning') {
         einkScanning = true;
-        if (st) st.textContent = '扫描中…（按一下墨水屏的蓝牙键可激活约 5 分钟可连接）';
+        if (st) st.textContent = '扫描中…（再次点击可提前停止；若设备未开蓝牙常开，请先按一下设备蓝牙键）';
+        const btn = $('#btn-eink-connect');
+        if (btn) btn.textContent = '停止扫描';
         const list = $('#eink-scan-list');
         if (list) list.innerHTML = '';
+        renderScanCount();
+        einkLog('开始扫描蓝牙设备…');
       } else if (type === 'scan') {
         let dev = null;
         try { dev = JSON.parse(data); } catch (e) { return; }
         const list = $('#eink-scan-list');
-        if (!list || !dev) return;
-        const item = document.createElement('div');
-        item.className = 'eink-scan-item';
-        item.innerHTML = '<span class="nm">' + escapeHtml(dev.name || '未知设备') + '</span>'
-          + '<span class="meta">' + dev.rssi + ' dBm</span>';
-        item.addEventListener('click', () => {
-          if (window.NativeBridge && window.NativeBridge.einkConnectAddr) {
-            window.NativeBridge.einkConnectAddr(dev.addr);
-            toast('正在连接 ' + (dev.name || '设备') + ' …');
-          }
-        });
-        list.appendChild(item);
+        if (!list || !dev || !dev.addr) return;
+        // ⚠️ 同一设备会被**多次上报**：BLE 的 advertising data 与 scan response 是两个包，
+        //    首个回调常常拿不到名字（此时原生侧报的是「（无名设备）」），名字要等带
+        //    scan response 的那个回调才出现。所以这里必须**按地址 upsert**，不能无脑 append：
+        //    否则同一设备会出现重复行，或者「（无名设备）」条目一直占位不更新 ——
+        //    这正是"列表里全是无名设备、怎么都找不到场风盘"的成因。
+        let item = null;
+        for (let i = 0; i < list.children.length; i++) {
+          if (list.children[i].dataset.addr === dev.addr) { item = list.children[i]; break; }
+        }
+        if (!item) {
+          item = document.createElement('div');
+          item.addEventListener('click', () => {
+            if (!item.dataset.addr) return;
+            if (window.NativeBridge && window.NativeBridge.einkConnectAddr) {
+              window.NativeBridge.einkConnectAddr(item.dataset.addr);
+              toast('正在连接 ' + (item.dataset.name || '设备') + ' …');
+            }
+          });
+        }
+        const nm = dev.name && dev.name !== '（无名设备）' ? dev.name : '（无名设备）';
+        const prevRank = item.parentNode ? einkRank(item) : -1;
+        item.dataset.addr = dev.addr;
+        item.dataset.name = nm;
+        item.dataset.named = nm === '（无名设备）' ? '0' : '1';
+        item.dataset.hit = dev.hit ? '1' : '0';
+        item.className = 'eink-scan-item' + (dev.hit ? ' hit' : '');
+        item.innerHTML = '<span class="nm">' + escapeHtml(nm)
+          + (dev.hit ? '<i class="tag">场风盘</i>' : '') + '</span>'
+          + '<span class="meta">' + (typeof dev.rssi === 'number' ? dev.rssi : '?') + ' dBm</span>';
+        // 权重变了才重排（否则每来一个同名广播都把节点搬一次，无名设备之间会互相扰动）
+        if (!item.parentNode || einkRank(item) !== prevRank) einkPlace(item);
+        renderScanCount();
       } else if (type === 'scan-done') {
         einkScanning = false;
+        const btn = $('#btn-eink-connect');
+        if (btn) btn.textContent = '扫描并连接场风盘';
+        renderScanCount();
         const list = $('#eink-scan-list');
-        if (list && list.children.length === 0 && st) {
-          st.textContent = '扫描完成，未发现场风盘设备';
+        const found = list ? list.children.length : 0;
+        const hits = list ? list.querySelectorAll('.eink-scan-item.hit').length : 0;
+        if (st) {
+          if (found === 0) st.textContent = '未发现任何蓝牙设备';
+          else if (hits === 0) st.textContent = '发现 ' + found + ' 个蓝牙设备（疑似场风盘 0 个）';
+          else st.textContent = '发现场风盘，点击列表项连接';
+        }
+        // 明确区分「一个设备都没扫到」和「扫到了但都不像场风盘」——旧版一律提示"未发现场风盘"，
+        // 会把"设备没广播""权限没给""被过滤器滤掉"这几种完全不同的故障混成一团
+        if (found === 0) {
+          einkLog('未发现任何蓝牙设备。请检查：① 墨水屏已按蓝牙键激活（或已开蓝牙常开）；'
+            + '② 手机系统蓝牙已打开；③ 已授予「附近的设备」权限。', 'warn');
+        } else if (hits === 0) {
+          einkLog('扫描本身正常（收到 ' + found + ' 个广播），但没有场风盘 —— 问题在设备侧：'
+            + '① 长按墨水屏按键直到指示灯亮（默认蓝牙是关的，勾了「蓝牙常开」则免按键）；'
+            + '② 按键后 120 秒内扫描，超时需重新按键；'
+            + '③ 微信小程序若还连着该设备，设备会停止广播，先在小程序里断开再扫。', 'warn');
+        } else {
+          einkLog('本次发现 ' + found + ' 个蓝牙设备，其中场风盘 ' + hits + ' 个。', 'ok');
         }
         // 连接成功时状态由 connected 事件覆盖
+      } else if (type === 'connecting') {
+        // 系统侧建连最长 30 秒，期间必须有可见状态，否则「点了直连没反应」
+        if (st) st.textContent = '正在连接 ' + data + ' …（最长等 30 秒）';
+        setEinkConnecting(true);
+        einkConnected = false; syncPushQrBtn();
+        einkLog('正在连接 ' + data + ' …');
+      } else if (type === 'connect-fail') {
+        if (st) st.textContent = '连接失败：' + data;
+        setEinkConnecting(false);
+        einkConnected = false; syncPushQrBtn();
+        einkLog('连接失败：' + data, 'warn');
+      } else if (type === 'connect-giveup') {
+        setEinkConnecting(false);
+        einkConnected = false; syncPushQrBtn();
       } else if (type === 'connected') {
         if (st) st.textContent = '已连接：' + data;
+        const btnScan = $('#btn-eink-connect');
+        if (btnScan) btnScan.textContent = '扫描并连接场风盘';
         const btnC = $('#btn-eink-connect'), btnD = $('#btn-eink-disconnect');
         if (btnC) btnC.style.display = 'none';
         if (btnD) btnD.style.display = '';
+        setEinkConnecting(false);
         const list = $('#eink-scan-list');
         if (list) list.innerHTML = '';
+        renderScanCount();
+        syncEinkSelfTest(true);
+        einkConnected = true; syncPushQrBtn();   // 首页「推送二维码」按钮解除置灰
+        // 不清日志：连接过程的历史（重试、失败原因）是排查问题的唯一线索，
+        // 以前一连上就清空，等于把线索擦掉
+        einkLog('✅ 已连接：' + data + '（可推送）', 'ok');
       } else if (type === 'disconnected') {
         if (st) st.textContent = '未连接';
+        einkScanning = false;
+        setEinkConnecting(false);
         const btnC = $('#btn-eink-connect'), btnD = $('#btn-eink-disconnect');
-        if (btnC) btnC.style.display = '';
+        if (btnC) { btnC.style.display = ''; btnC.textContent = '扫描并连接场风盘'; }
         if (btnD) btnD.style.display = 'none';
         const sw = $('#switch-eink-always');
         if (sw) sw.classList.remove('on');
+        syncEinkSelfTest(false);
+        einkConnected = false; syncPushQrBtn();
       } else if (type === 'ble') {
         const sw = $('#switch-eink-always');
         if (sw) sw.classList.toggle('on', data === '1');
+      } else if (type === 'pins-fixed') {
+        toast('引脚配置已回写，请断开重连确认');
+      } else if (type === 'devcfg') {
+        // data = "<引脚串>|<驱动字节>"，设备自报。日志里已打印，这里只做异常提示。
+        const parts = String(data || '').split('|');
+        if (parts[0] && parts[0] !== '1413060504030207') {
+          toast('注意：设备引脚配置异常，可点「修复引脚配置」');
+        }
       } else if (type === 'log') {
-        if (type && data) toast(data);
+        einkLog(data);
       } else if (type === 'push-status') {
         if (data === 'done') toast('场风盘已更新');
+        else if (data === 'busy') einkLog('上一次推送尚未结束，本次跳过', 'warn');
       }
     },
   };
@@ -2351,14 +2775,64 @@
     });
     $('#btn-back-eink').addEventListener('click', () => showPage('page-mode'));
     $('#btn-eink-connect').addEventListener('click', () => {
-      if (window.NativeBridge && window.NativeBridge.einkConnect) {
-        window.NativeBridge.einkConnect();  // 原生处理权限请求→扫描
+      const b = window.NativeBridge;
+      if (einkScanning) {          // 扫描中：同一按钮变为「停止扫描」
+        if (b && b.einkStopScan) b.einkStopScan();
+        return;
+      }
+      if (b && b.einkConnect) {
+        b.einkConnect();           // 原生处理权限请求→扫描
       } else {
         toast('蓝牙推送仅支持在 APP 内使用');
       }
     });
     $('#btn-eink-disconnect').addEventListener('click', () => {
       if (window.NativeBridge && window.NativeBridge.einkDisconnect) window.NativeBridge.einkDisconnect();
+    });
+    // 蓝牙诊断：一键输出权限/蓝牙开关/扫描器/定位服务等扫描前提，日志区会留屏
+    $('#btn-eink-diag').addEventListener('click', () => {
+      const b = window.NativeBridge;
+      if (b && b.einkDiagnose) { einkLogClear(); b.einkDiagnose(); }
+      else toast('此功能需在 APP 内使用');
+    });
+    // 直接连接地址：绕过扫描的兜底路径。BLE 设备被别的 App 占用 / 广播已超时 / 系统层没把
+    // 广播交给本 App 时，扫描必然失败；但只要知道 MAC 就能直接 GATT 连接。
+    $('#btn-eink-connect-addr').addEventListener('click', () => {
+      const inp = $('#eink-manual-addr');
+      const raw = inp ? inp.value : '';
+      const hex = String(raw || '').replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+      if (hex.length !== 12) {
+        einkLog('地址格式不对：需要 12 位十六进制 MAC（如 AA:BB:CC:DD:EE:FF），当前输入「' + raw + '」', 'warn');
+        return;
+      }
+      const mac = hex.match(/../g).join(':');
+      const b = window.NativeBridge;
+      if (b && b.einkConnectAddr) {
+        // 立刻给可见反馈：系统建连最长 30 秒才回结果，此前状态栏若不动，用户只会以为按钮失灵
+        const st = $('#eink-status');
+        if (st) st.textContent = '正在连接 ' + mac + ' …（最长等 30 秒）';
+        einkLog('直接连接 ' + mac + ' …');
+        b.einkConnectAddr(mac);
+      } else {
+        toast('此功能需在 APP 内使用');
+      }
+    });
+    // 推图自检：清屏 / 测试图案（不依赖对局数据，用于验证整条推图链路）
+    $('#btn-eink-clear').addEventListener('click', () => {
+      const b = window.NativeBridge;
+      if (b && b.einkClearPanel) b.einkClearPanel();
+      else toast('此功能需在 APP 内使用');
+    });
+    $('#btn-eink-test').addEventListener('click', () => {
+      const b = window.NativeBridge;
+      if (b && b.einkTestPattern) b.einkTestPattern();
+      else toast('此功能需在 APP 内使用');
+    });
+    // 修复引脚：把正确引脚串回写设备 flash（仅在引脚被写坏时用）
+    $('#btn-eink-fixpins').addEventListener('click', () => {
+      const b = window.NativeBridge;
+      if (b && b.einkRepairPins) b.einkRepairPins();
+      else toast('此功能需在 APP 内使用');
     });
     // 蓝牙常开开关：连接后才可操作；状态以设备回报（ble=0/1）为准
     $('#switch-eink-always').addEventListener('click', () => {
@@ -2371,22 +2845,6 @@
       const turningOn = !sw.classList.contains('on');
       sw.classList.toggle('on', turningOn); // 乐观更新，设备回报（ble=）会纠正
       bridge.einkSetAlwaysOn(turningOn);
-    });
-
-    // 黑白快刷开关（默认开，用户定：优先低延时；本地记忆，无蓝牙也能切）
-    const swFast = $('#switch-eink-fast');
-    if (window.NativeBridge && window.NativeBridge.einkIsFastMode) {
-      swFast.classList.toggle('on', window.NativeBridge.einkIsFastMode());
-    }
-    swFast.addEventListener('click', () => {
-      const turningOn = !swFast.classList.contains('on');
-      swFast.classList.toggle('on', turningOn);
-      if (window.NativeBridge && window.NativeBridge.einkSetFastMode) {
-        window.NativeBridge.einkSetFastMode(turningOn);
-      } else {
-        toast('此功能需在 APP 内使用');
-        swFast.classList.toggle('on', !turningOn);
-      }
     });
   }
 
@@ -2452,7 +2910,7 @@
       );
     });
 
-    // 开关组件（蓝牙常开/快刷开关在下方单独绑定，需发命令+校验连接）
+    // 开关组件（蓝牙常开开关在下方单独绑定，需发命令+校验连接）
     document.querySelectorAll('.switch').forEach((sw) => {
       if (sw.id === 'switch-eink-always' || sw.id === 'switch-eink-fast') return; // 跳过，见 bindEinkPage
       sw.addEventListener('click', () => sw.classList.toggle('on'));
@@ -2465,6 +2923,9 @@
       notifyTagPush(true);  // 立即推送（不受节流限制）
       toast('已请求推送到场风盘');
     });
+    // 首页「推送二维码到场风盘」（仅有二维码且已连场风盘时可点）
+    const pushQrBtn = $('#btn-push-qr');
+    if (pushQrBtn) pushQrBtn.addEventListener('click', onPushQrClick);
 
     // 切到后台时立刻释放摄像头（避免扫码弹窗还开着就把摄像头一直占着）
     document.addEventListener('visibilitychange', () => {

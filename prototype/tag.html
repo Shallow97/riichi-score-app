@@ -6,8 +6,7 @@
      布局（用户定稿 2026-09-30）：
        - 屏中间：局号（东1局）/ 本场数（0本场）/ 场供（场供1000，实际点数）
        - 屏四边：每边一位玩家 = 风位（东红其余黑）+ 分数 + 立直显示区（立直棒中心红点）
-       - 黑白快刷模式（默认开，用户定 2026-09-30 优先低延时）：庄家"东"改反白块，
-         红→黑；三色全刷可随时切回（快刷序列见 js/tagpush.js 头注释）
+         （推图只有三色全刷一条路径，无黑白快刷模式 —— 快刷要改 EPD 寄存器，实测会卡死设备）
        - 边位跟玩家静态座位（seat）绑定，开局定死：四人 东下/南右/西上/北左（逆时针）；
          三人（座位东南西）东下/南右/西左，上方固定留空
        - 红色"东"（庄家）随轮庄在四边迁移，起始在下方 -->
@@ -29,6 +28,16 @@
   #log { font-size: 12px; background: #fff; border: 1px solid #ccc; padding: 6px;
          max-height: 140px; overflow-y: auto; white-space: pre-wrap; color: #444; }
   label { font-size: 13px; }
+  #diag { font-size: 12px; background: #fff; border: 1px solid #ccc; padding: 8px; margin: 8px 0; }
+  #diag .hd { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  #diag .hd b { font-size: 13px; font-weight: 500; }
+  #diag table { width: 100%; border-collapse: collapse; }
+  #diag th { text-align: left; font-weight: 400; color: #666; padding: 3px 10px 3px 0;
+             white-space: nowrap; vertical-align: top; width: 76px; }
+  #diag td { padding: 3px 0; word-break: break-all; font-family: monospace; }
+  #diag td.warn { color: #c0392b; }
+  #diag td.ok { color: #1d7a4a; }
+  #diag .hint { margin-top: 6px; color: #c0392b; line-height: 1.5; display: none; }
 </style>
 </head>
 <body>
@@ -39,10 +48,29 @@
   <button id="btn-push" disabled>立即推送</button>
   <label><input type="checkbox" id="opt-rot"> 竖屏推送（旋转90°）</label>
   <label><input type="checkbox" id="opt-auto" checked> 收到结算自动推送</label>
-  <label><input type="checkbox" id="opt-bw" checked> 黑白快刷（2-3秒，无红色）</label>
+  <label><input type="checkbox" id="opt-readonly"> 只读诊断（连接后不发 INIT，不改设备型号）</label>
 </div>
 <div class="row">
   <span id="status">未连接</span>
+</div>
+<div class="row">
+  <button id="btn-clear" disabled>面板自检（清屏）</button>
+  <button id="btn-test" disabled>推送测试图案</button>
+  <label><input type="checkbox" id="opt-ack"> 逐块回执（慢·更稳）</label>
+  <span style="font-size:12px;color:#666;">无对局时也可用：先清屏、再推测试图，用于区分「屏不响应」和「画面数据错」</span>
+</div>
+<div id="diag">
+  <div class="hd"><b>推图诊断</b><button id="btn-copy-diag">复制诊断</button></div>
+  <table>
+    <tr><th>配置原始</th><td id="d-raw">—</td></tr>
+    <tr><th>driver</th><td id="d-driver">—</td></tr>
+    <tr><th>pins</th><td id="d-pins">—</td></tr>
+    <tr><th>MTU</th><td id="d-mtu">—</td></tr>
+    <tr><th>标志位</th><td id="d-flags">—</td></tr>
+    <tr><th>分块</th><td id="d-chunks">—</td></tr>
+    <tr><th>写失败</th><td id="d-fail">0</td></tr>
+  </table>
+  <div class="hint" id="d-hint"></div>
 </div>
 <div id="log"></div>
 <script src="js/tagpush.js"></script>
@@ -55,6 +83,8 @@
   var statusEl = document.getElementById('status');
   var btnBle = document.getElementById('btn-ble');
   var btnPush = document.getElementById('btn-push');
+  var btnClear = document.getElementById('btn-clear');
+  var btnTest = document.getElementById('btn-test');
   var optAuto = document.getElementById('opt-auto');
   var optRot = document.getElementById('opt-rot');
   var BLACK = '#000000', RED = '#ff0000', WHITE = '#ffffff';
@@ -68,6 +98,138 @@
     logEl.scrollTop = logEl.scrollHeight;
   }
   function setStatus(s) { statusEl.textContent = s; }
+
+  /* ---------------- 推图诊断面板 ----------------
+     目的：在一处集中显示"设备真实型号 / MTU 与 RLE / 本次用的标志位 / 写入失败"，
+     用于区分「型号被改错」「标志位走错分支」「传输失败」三类故障。
+     取证时勾「只读诊断」：连接后不发热身 INIT，避免把设备 flash 里的 model_id 改掉。 */
+  var dRaw = document.getElementById('d-raw');
+  var dDriver = document.getElementById('d-driver');
+  var dPins = document.getElementById('d-pins');
+  var dMtu = document.getElementById('d-mtu');
+  var dFlags = document.getElementById('d-flags');
+  var dChunks = document.getElementById('d-chunks');
+  var dFail = document.getElementById('d-fail');
+  var dHint = document.getElementById('d-hint');
+  var optReadOnly = document.getElementById('opt-readonly');
+  var optAck = document.getElementById('opt-ack');
+  var diagFails = 0;
+  var diagLines = [];
+  var planeInfo = {};
+
+  /* 推送类按钮（推送 / 清屏自检 / 测试图案）统一启停：未连接或只读诊断时全部禁用 */
+  function syncBtns() {
+    var dis = !TagPush.state.connected || optReadOnly.checked;
+    btnPush.disabled = dis;
+    btnClear.disabled = dis;
+    btnTest.disabled = dis;
+  }
+
+  function hex2(n) { return '0x' + ('0' + n.toString(16)).slice(-2); }
+  function dlog(s) { diagLines.push(s); }
+
+  TagPush.setLog(log);
+  TagPush.setStatus(setStatus);
+
+  TagPush.onDiag(function (o) {
+    if (o.kind === 'device-config') {
+      var isBwr = (o.driver === '03');
+      dRaw.textContent = o.raw;
+      dDriver.textContent = hex2(parseInt(o.driver || '0', 16)) +
+        (isBwr ? ' 4.2″三色 UC8176 ✓' : ' ⚠ 与代码传入的 0x03 不一致');
+      dDriver.className = isBwr ? 'ok' : 'warn';
+      dPins.textContent = o.pins || '—';
+      dlog('设备配置原始: ' + o.raw + '  driver=0x' + o.driver + '  pins=' + o.pins);
+      if (!isBwr) {
+        dHint.style.display = 'block';
+        dHint.textContent = '⚠ 设备 flash 里的型号是 0x' + o.driver + '，而代码推图前发的是 INIT(0x03)。' +
+          '固件收到带参数的 INIT 会把它永久写进 flash —— 勾「只读诊断」重连可避免继续改写。';
+      }
+    } else if (o.kind === 'mtu') {
+      dMtu.textContent = String(o.mtu) + (o.rle ? ' · RLE=1 ✓' : ' ⚠ 未报 rle=1，将走旧式标志位');
+      dMtu.className = o.rle ? 'ok' : 'warn';
+      dlog('MTU 报文原文: "' + o.text + '" → mtu=' + o.mtu + ' rle=' + o.rle);
+    } else if (o.kind === 'plane') {
+      planeInfo[o.step] = o;
+      dChunks.textContent = ['bw', 'red'].filter(function (k) { return planeInfo[k]; }).map(function (k) {
+        var v = planeInfo[k];
+        return (k === 'bw' ? '黑白' : '红') + ' ' + v.bytes + 'B → ' + v.chunks + ' 块/' + v.encoded;
+      }).join('   ');
+      dFlags.textContent = '首 ' + hex2(o.firstFlag) + ' · 续 ' + hex2(o.nextFlag) +
+        (o.rleSupport ? (o.useRle ? '（新式 + RLE 压缩）' : '（新式，未压缩）') : ' ⚠ 旧式编码');
+      dFlags.className = o.rleSupport ? 'ok' : 'warn';
+      dlog((o.step === 'bw' ? '黑白面' : '红面') + ': ' + o.bytes + ' 字节 → ' + o.chunks +
+        ' 块, 编码=' + o.encoded + ', chunkSize=' + o.chunkSize + ', 回执间隔=' + o.ackInterval +
+        ', 标志位 首=' + hex2(o.firstFlag) + ' 续=' + hex2(o.nextFlag));
+    } else if (o.kind === 'write-fail') {
+      diagFails++;
+      dFail.textContent = diagFails + ' 次（' + (o.step === 'bw' ? '黑白' : '红') +
+        ' 第 ' + (o.index + 1) + '/' + o.total + ' 块, ack=' + o.ack + '）';
+      dFail.className = 'warn';
+      dlog('⚠ 写入失败: ' + (o.step === 'bw' ? '黑白面' : '红面') + ' 第 ' + (o.index + 1) + '/' + o.total + ' 块, ack=' + o.ack);
+    } else if (o.kind === 'init') {
+      dlog('已发裸 INIT（按设备已存型号初始化，不改写型号）');
+    } else if (o.kind === 'clear') {
+      dlog(o.ok ? '已发 CLEAR（清屏自检）→ 约 15 秒后屏应变全白' : '⚠ CLEAR 写入失败');
+    } else if (o.kind === 'skip-init') {
+      dlog('只读诊断：未发 INIT（设备型号保持不变）');
+    } else if (o.kind === 'push-start') {
+      dlog('开始推送: ' + o.w + '×' + o.h + ', MTU=' + o.mtu + ', RLE=' + o.rle);
+    } else if (o.kind === 'refresh') {
+      dlog('已发 REFRESH：写入' + (o.ok ? '成功' : '⚠ 失败') + '（推图总耗时 ' + o.ms + ' ms）');
+    } else if (o.kind === 'push-done') {
+      dlog('推送完成，用时 ' + o.ms + ' ms');
+    }
+  });
+
+  optReadOnly.addEventListener('change', function () {
+    TagPush.setReadOnly(optReadOnly.checked);
+    log(optReadOnly.checked ? '已开启只读诊断：连接后不发 INIT，推送按钮禁用（仅用于取证）'
+                            : '已关闭只读诊断：恢复标准推图流程');
+    syncBtns();
+  });
+
+  /* 逐块回执：默认间隔 50 ⇒ RLE 后只有二十来块时，实际上只有「末块」等设备 ACK。
+     无响应写入（writeValueWithoutResponse）丢包不会报错，只能靠逐块回执排除。 */
+  optAck.addEventListener('change', function () {
+    TagPush.setAckInterval(optAck.checked ? 1 : 50);
+    log(optAck.checked ? '已开启逐块回执：每块都等设备 ACK（慢，但能排除 BLE 丢包）'
+                       : '已恢复默认回执间隔（每 50 块一次）');
+  });
+
+  function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); log('诊断信息已复制到剪贴板'); }
+    catch (e) { log('复制失败，请手动选中下方日志'); }
+    document.body.removeChild(ta);
+  }
+
+  document.getElementById('btn-copy-diag').addEventListener('click', function () {
+    var text = [
+      '【场风盘推图诊断】' + new Date().toLocaleString(),
+      '配置原始: ' + dRaw.textContent,
+      'driver: ' + dDriver.textContent,
+      'pins: ' + dPins.textContent,
+      'MTU: ' + dMtu.textContent,
+      '标志位: ' + dFlags.textContent,
+      '分块: ' + dChunks.textContent,
+      '写失败: ' + dFail.textContent,
+      '--- 事件 ---'
+    ].concat(diagLines).concat([
+      '--- 页面日志 ---',
+      (logEl.textContent || '').replace(/\n+$/, '')
+    ]).join('\n');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(
+        function () { log('诊断信息已复制到剪贴板'); },
+        function () { fallbackCopy(text); });
+    } else {
+      fallbackCopy(text);
+    }
+  });
 
   /* ---------------- 渲染（画布即最终屏显，颜色只用纯黑/纯红/纯白） ---------------- */
 
@@ -104,25 +266,18 @@
 
   function drawWind(p, x, y, size, centered) {
     ctx.font = 'bold ' + size + 'px sans-serif';
-    if (p.wind === '东' && TagPush.isFastMode()) {
-      // 黑白快刷：庄家用反白块（黑底白字）替代红字
-      var tw = ctx.measureText(p.wind).width;
-      var rx = centered ? -tw / 2 - 7 : x - 7;
-      ctx.fillStyle = BLACK;
-      ctx.fillRect(rx, y - size + 6, tw + 14, size + 8);
-      ctx.fillStyle = WHITE;
-      ctx.fillText(p.wind, x, y);
-    } else {
-      ctx.fillStyle = (p.wind === '东') ? RED : BLACK;
-      ctx.fillText(p.wind, x, y);
-    }
+    ctx.fillStyle = (p.wind === '东') ? RED : BLACK;
+    ctx.fillText(p.wind, x, y);
   }
 
   function drawEdge(p, rect, angle) {
     var w = rect[2], h = rect[3];
+    // ⚠️ 这里的 angle 是【弧度】，`> 2` 才判得出长边（±π/2≈1.57 判不出 ⇒ 左右为短边）。
+    //    移植到 Java 时对方用的是【角度】，会把 `Math.abs(-90) > 2` 判成恒真 ⇒ 左右边
+    //    风位与分数重叠（2026-10-04 已踩过）。改这里或用别的角度制请同步
+    //    EinkTagRenderer.drawEdge()，并跑 tools/check-tag-edge-layout.js 复核。
     var wide = (angle === 0 || Math.abs(angle) > 2); // 上下长边 / 左右短边
     var L = wide ? w : h, H = wide ? h : w;          // 本地坐标：L=阅读方向宽，H=竖直高
-    var bw = TagPush.isFastMode();
     ctx.save();
     ctx.translate(rect[0] + w / 2, rect[1] + h / 2);
     ctx.rotate(angle);
@@ -132,7 +287,7 @@
     if (wide) {
       // 长边（400 宽）：风位左、分数右
       drawWind(p, -L / 2 + 12, -H / 2 + windSize + 8, windSize, false);
-      ctx.fillStyle = (p.points < 0 && !bw) ? RED : BLACK;
+      ctx.fillStyle = (p.points < 0) ? RED : BLACK;
       ctx.font = 'bold ' + scoreSize + 'px sans-serif';
       if (ctx.measureText(fmt(p.points)).width > L - 24) ctx.font = 'bold 28px sans-serif';
       ctx.textAlign = 'right';
@@ -142,7 +297,7 @@
       // 短边（120 宽条）：风位与分数上下堆叠居中（横排会挤在一起）
       ctx.textAlign = 'center';
       drawWind(p, 0, -H / 2 + windSize + 8, windSize, true);
-      ctx.fillStyle = (p.points < 0 && !bw) ? RED : BLACK;
+      ctx.fillStyle = (p.points < 0) ? RED : BLACK;
       ctx.font = 'bold ' + scoreSize + 'px sans-serif';
       if (ctx.measureText(fmt(p.points)).width > L - 12) ctx.font = 'bold 28px sans-serif';
       ctx.fillText(fmt(p.points), 0, H / 2 - 26);
@@ -158,7 +313,7 @@
       ctx.lineWidth = 2;
       ctx.strokeStyle = BLACK;
       ctx.stroke();
-      ctx.fillStyle = bw ? BLACK : RED;   // 快刷模式中心点黑（红通道不显）
+      ctx.fillStyle = RED;
       ctx.beginPath();
       ctx.arc(sx + sw / 2, cy, 4.5, 0, Math.PI * 2);
       ctx.fill();
@@ -205,7 +360,7 @@
       ctx.textAlign = 'left';
       ctx.fillStyle = BLACK;
       ctx.fillText(sHonba, sx, 184);
-      if (sKyotaku) { ctx.fillStyle = TagPush.isFastMode() ? BLACK : RED; ctx.fillText(sKyotaku, sx + w1 + 14, 184); }
+      if (sKyotaku) { ctx.fillStyle = RED; ctx.fillText(sKyotaku, sx + w1 + 14, 184); }
       ctx.textAlign = 'center';
     }
     ctx.textAlign = 'left';
@@ -224,11 +379,23 @@
 
   btnBle.addEventListener('click', async function () {
     btnBle.disabled = true;
+    // 每次连接前重置面板（设备配置 / MTU 会随本次连接重新上报）
+    diagFails = 0;
+    dFail.textContent = '0'; dFail.className = '';
+    dFlags.textContent = '—'; dFlags.className = '';
+    dChunks.textContent = '—';
+    dMtu.textContent = '—'; dMtu.className = '';
+    dRaw.textContent = '—';
+    dDriver.textContent = '—'; dDriver.className = '';
+    dPins.textContent = '—';
+    dHint.style.display = 'none';
+    planeInfo = {};
+    TagPush.setReadOnly(optReadOnly.checked);
     try {
       var ok = await TagPush.connect();
-      btnPush.disabled = !ok;
+      syncBtns();
       btnBle.disabled = false;
-      if (ok) log('蓝牙已连接，等待结算广播…');
+      if (ok) log(optReadOnly.checked ? '蓝牙已连接（只读诊断，可查看设备配置）' : '蓝牙已连接，等待结算广播…');
     } catch (e) {
       log('连接失败: ' + (e && e.message ? e.message : e));
       btnBle.disabled = false;
@@ -236,12 +403,44 @@
   });
 
   btnPush.addEventListener('click', async function () {
-    if (!currentGame) { log('还没有画面数据'); return; }
+    if (!currentGame) {
+      log('还没有画面数据：本页只在收到对局 state 广播后才有内容（没开对局就是空的）。' +
+          '只想单独验证推送链路，请点「推送测试图案」。');
+      return;
+    }
     try {
       await TagPush.pushCanvas(canvas, optRot.checked);
     } catch (e) {
       log('推送失败: ' + (e && e.message ? e.message : e));
     }
+  });
+
+  /* 面板自检：清屏 —— 只走固件内部「复位 + 上电 + 两平面填白 + 全屏刷新」，
+     完全不经过我们的位图 / 标志位 / RLE 编码，用来把「屏不响应」和「画面数据错」切开。 */
+  btnClear.addEventListener('click', async function () {
+    try { await TagPush.clearPanel(); }
+    catch (e) { log('清屏失败: ' + (e && e.message ? e.message : e)); }
+  });
+
+  /* 测试图案：不依赖对局数据，画一张一眼能看出对错的图（黑框 / 红块 / 黑块 / 文字） */
+  function drawTestPattern() {
+    ctx.fillStyle = WHITE; ctx.fillRect(0, 0, 400, 300);
+    ctx.strokeStyle = BLACK; ctx.lineWidth = 6; ctx.strokeRect(3, 3, 394, 294);
+    ctx.fillStyle = RED;   ctx.fillRect(40, 40, 120, 90);
+    ctx.fillStyle = BLACK; ctx.fillRect(240, 40, 120, 90);
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 44px sans-serif';
+    ctx.fillStyle = BLACK; ctx.fillText('场风盘', 200, 205);
+    ctx.font = 'bold 28px sans-serif';
+    ctx.fillStyle = RED;   ctx.fillText('测试图案 东1局', 200, 252);
+    ctx.textAlign = 'left';
+  }
+
+  btnTest.addEventListener('click', async function () {
+    drawTestPattern();
+    log('已画测试图案，正确结果应为：黑边框 + 左上红块 + 右上黑块 + 中间「场风盘」');
+    try { await TagPush.pushCanvas(canvas, optRot.checked); }
+    catch (e) { log('推送失败: ' + (e && e.message ? e.message : e)); }
   });
 
   async function maybeAutoPush(game) {
@@ -276,18 +475,6 @@
 
   var params = new URLSearchParams(location.search);
   var isDemo = params.has('demo');
-  // 快刷模式：?bw=0/1 强制，否则读 localStorage（默认开——用户定：优先低延时）
-  var optBw = document.getElementById('opt-bw');
-  var bwInit = params.has('bw') ? (params.get('bw') !== '0')
-                                : (function () { try { return localStorage.getItem('tag_bw') !== '0'; } catch (e) { return true; } })();
-  optBw.checked = bwInit;
-  TagPush.setFastMode(bwInit);
-  optBw.addEventListener('change', function () {
-    TagPush.setFastMode(optBw.checked);
-    try { localStorage.setItem('tag_bw', optBw.checked ? '1' : '0'); } catch (e) {}
-    if (currentGame) render(currentGame);
-    log('快刷模式：' + (optBw.checked ? '开（黑白 2-3 秒，无红色）' : '关（三色全刷约 15 秒）'));
-  });
   if (isDemo) {
     render(DEMO_GAME());
     document.getElementById('board').__rendered = true;
